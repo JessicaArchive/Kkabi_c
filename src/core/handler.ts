@@ -53,20 +53,20 @@ export function createHandler(channel: Channel) {
         threadId,
       );
       if (!approved) {
-        await channel.sendText(chatId, "🚫 요청이 거부되었습니다.", threadId);
+        await channel.sendText(chatId, "Request denied.", threadId);
         return;
       }
     }
 
-    // Send "처리 중..." message
-    const pendingMsgId = await channel.sendText(chatId, "⏳ 처리 중...", threadId);
+    // Send "Processing..." message
+    const pendingMsgId = await channel.sendText(chatId, "Processing...", threadId);
 
     // Build prompt and enqueue
     const prompt = buildPrompt(text, chatId);
     const { promise, position } = enqueue(prompt, chatId, msg.channel);
 
     if (position > 1) {
-      await channel.editMessage(chatId, pendingMsgId, `⏳ 대기 중... (${position}번째)`);
+      await channel.editMessage(chatId, pendingMsgId, `Waiting in queue... (position ${position})`);
     }
 
     const startTime = Date.now();
@@ -76,7 +76,7 @@ export function createHandler(channel: Channel) {
       const durationMs = Date.now() - startTime;
 
       if (result.error) {
-        const errorMsg = `❌ 오류: ${result.error}`;
+        const errorMsg = `Error: ${result.error}`;
         await channel.editMessage(chatId, pendingMsgId, errorMsg);
         saveExecution({
           prompt: text,
@@ -91,7 +91,7 @@ export function createHandler(channel: Channel) {
       }
 
       // Send response (edit the pending message)
-      const response = result.output || "(빈 응답)";
+      const response = result.output || "(empty response)";
       await channel.editMessage(chatId, pendingMsgId, response);
 
       // Save conversation
@@ -113,9 +113,9 @@ export function createHandler(channel: Channel) {
         durationMs,
       });
 
-      appendDailyLog(`[까비] ${response.slice(0, 100)}`);
+      appendDailyLog(`[Kkabi] ${response.slice(0, 100)}`);
     } catch (err) {
-      const errorMsg = `❌ 예상치 못한 오류: ${err instanceof Error ? err.message : String(err)}`;
+      const errorMsg = `Unexpected error: ${err instanceof Error ? err.message : String(err)}`;
       await channel.editMessage(chatId, pendingMsgId, errorMsg);
     }
   };

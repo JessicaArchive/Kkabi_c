@@ -8,20 +8,19 @@ const SOUL_FILE = join(PERSONA_DIR, "SOUL.md");
 const USER_FILE = join(PERSONA_DIR, "USER.md");
 const MOOD_FILE = join(PERSONA_DIR, "MOOD.md");
 
-const DEFAULT_SOUL = `# Kkabi (까비)
-- 회사 업무를 돕는 AI 어시스턴트
-- 친근하지만 전문적인 톤
-- 한국어 기본, 필요시 영어 혼용
-- 코드 작업에 능숙
+const DEFAULT_SOUL = `# Kkabi
+- AI assistant for workplace tasks
+- Friendly yet professional tone
+- Skilled at code-related tasks
 `;
 
-const DEFAULT_USER = `# 사용자 정보
-- (아직 설정되지 않음)
+const DEFAULT_USER = `# User Info
+- (Not yet configured)
 `;
 
-const DEFAULT_MOOD = `# 현재 상태
-- 기분: 보통
-- 에너지: 높음
+const DEFAULT_MOOD = `# Current State
+- Mood: Neutral
+- Energy: High
 `;
 
 export interface Persona {

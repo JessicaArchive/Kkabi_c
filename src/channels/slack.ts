@@ -130,7 +130,7 @@ export class SlackChannel implements Channel {
 
   async editMessage(chatId: string, msgId: string, text: string): Promise<void> {
     const truncated = text.length > MAX_TEXT_LENGTH
-      ? text.slice(0, MAX_TEXT_LENGTH - 20) + "\n\n... (잘림)"
+      ? text.slice(0, MAX_TEXT_LENGTH - 20) + "\n\n... (truncated)"
       : text;
 
     try {
@@ -160,13 +160,13 @@ export class SlackChannel implements Channel {
           elements: [
             {
               type: "button",
-              text: { type: "plain_text", text: "✅ 승인" },
+              text: { type: "plain_text", text: "Approve" },
               style: "primary",
               action_id: "confirm_approve",
             },
             {
               type: "button",
-              text: { type: "plain_text", text: "❌ 거부" },
+              text: { type: "plain_text", text: "Deny" },
               style: "danger",
               action_id: "confirm_deny",
             },
