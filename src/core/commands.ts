@@ -32,7 +32,7 @@ export async function executeCommand(
     case "cd":
       return cmdCd(args);
     case "pwd":
-      return { text: `📁 ${workingDir}` };
+      return { text: `${workingDir}` };
     case "status":
       return cmdStatus();
     case "history":
@@ -54,28 +54,28 @@ export async function executeCommand(
     case "help":
       return { text: HELP_TEXT };
     default:
-      return { text: `❓ 알 수 없는 명령어: ${cmd}\n!help 로 도움말 확인` };
+      return { text: `Unknown command: ${cmd}\nType !help for available commands` };
   }
 }
 
 function cmdCd(args: string): CommandResult {
-  if (!args) return { text: "사용법: !cd <경로>" };
+  if (!args) return { text: "Usage: !cd <path>" };
   const target = args.replace("~", process.env.HOME ?? "");
   const resolved = resolve(workingDir, target);
   if (!existsSync(resolved)) {
-    return { text: `❌ 경로 없음: ${resolved}` };
+    return { text: `Path not found: ${resolved}` };
   }
   workingDir = resolved;
-  return { text: `📁 → ${workingDir}` };
+  return { text: `-> ${workingDir}` };
 }
 
 function cmdStatus(): CommandResult {
   const running = isRunning();
   const queueLen = getQueueLength();
   const lines = [
-    `🤖 상태: ${running ? "실행 중" : "대기"}`,
-    `📋 큐: ${queueLen}개`,
-    `📁 작업 디렉토리: ${workingDir}`,
+    `Status: ${running ? "Running" : "Idle"}`,
+    `Queue: ${queueLen} item(s)`,
+    `Working directory: ${workingDir}`,
   ];
   return { text: lines.join("\n") };
 }
@@ -83,9 +83,9 @@ function cmdStatus(): CommandResult {
 function cmdHistory(chatId: string, args: string): CommandResult {
   const limit = parseInt(args) || 10;
   const rows = getRecentConversation(chatId, limit);
-  if (rows.length === 0) return { text: "대화 기록이 없습니다." };
+  if (rows.length === 0) return { text: "No conversation history." };
   const lines = rows.map(
-    (r) => `[${new Date(r.timestamp).toLocaleTimeString("ko-KR")}] ${r.role}: ${r.content.slice(0, 100)}`,
+    (r) => `[${new Date(r.timestamp).toLocaleTimeString("en-US")}] ${r.role}: ${r.content.slice(0, 100)}`,
   );
   return { text: lines.join("\n") };
 }
@@ -93,15 +93,15 @@ function cmdHistory(chatId: string, args: string): CommandResult {
 function cmdMemory(args: string): CommandResult {
   if (!args) {
     const mem = readMemory();
-    return { text: mem || "(비어있음)" };
+    return { text: mem || "(empty)" };
   }
   appendMemory(args);
-  return { text: `✅ 메모리 추가: ${args}` };
+  return { text: `Memory added: ${args}` };
 }
 
 function cmdForget(): CommandResult {
   clearMemory();
-  return { text: "🗑️ 메모리 초기화 완료" };
+  return { text: "Memory cleared." };
 }
 
 function cmdPersona(args: string): CommandResult {
@@ -113,28 +113,28 @@ function cmdPersona(args: string): CommandResult {
   }
   const [section, ...rest] = args.split(" ");
   const content = rest.join(" ");
-  if (!content) return { text: "사용법: !persona <soul|user|mood> <내용>" };
+  if (!content) return { text: "Usage: !persona <soul|user|mood> <content>" };
 
   switch (section.toLowerCase()) {
     case "soul":
       updateSoul(content);
-      return { text: "✅ SOUL 업데이트 완료" };
+      return { text: "SOUL updated." };
     case "user":
       updateUser(content);
-      return { text: "✅ USER 업데이트 완료" };
+      return { text: "USER updated." };
     case "mood":
       updateMood(content);
-      return { text: "✅ MOOD 업데이트 완료" };
+      return { text: "MOOD updated." };
     default:
-      return { text: "사용법: !persona <soul|user|mood> <내용>" };
+      return { text: "Usage: !persona <soul|user|mood> <content>" };
   }
 }
 
 function cmdCancel(): CommandResult {
   if (cancelCurrent()) {
-    return { text: "🛑 실행 중인 작업을 취소했습니다." };
+    return { text: "Running task cancelled." };
   }
-  return { text: "실행 중인 작업이 없습니다." };
+  return { text: "No task is currently running." };
 }
 
 function cmdRunning(): CommandResult {
@@ -143,15 +143,15 @@ function cmdRunning(): CommandResult {
   const queueItems = getQueueItems();
 
   if (!running && queueItems.length === 0) {
-    return { text: "실행 중인 작업이 없습니다." };
+    return { text: "No task is currently running." };
   }
 
   const lines: string[] = [];
   if (running) {
-    lines.push(`▶️ 실행 중: ${promptId}`);
+    lines.push(`Running: ${promptId}`);
   }
   if (queueItems.length > 0) {
-    lines.push(`📋 대기열 (${queueItems.length}개):`);
+    lines.push(`Queue (${queueItems.length} item(s)):`);
     queueItems.forEach((item, i) => {
       lines.push(`  ${i + 1}. ${item.prompt.slice(0, 50)}...`);
     });
@@ -162,10 +162,10 @@ function cmdRunning(): CommandResult {
 function cmdCron(args: string, chatId: string, channel: ChannelType): CommandResult {
   if (!args) {
     const crons = listCrons();
-    if (crons.length === 0) return { text: "등록된 크론잡이 없습니다." };
+    if (crons.length === 0) return { text: "No cron jobs registered." };
     const lines = crons.map(
       (c) =>
-        `${c.enabled ? "✅" : "⏸️"} [${c.id.slice(0, 8)}] ${c.schedule} → ${c.prompt.slice(0, 40)}`,
+        `${c.enabled ? "ON" : "OFF"} [${c.id.slice(0, 8)}] ${c.schedule} -> ${c.prompt.slice(0, 40)}`,
     );
     return { text: lines.join("\n") };
   }
@@ -176,58 +176,58 @@ function cmdCron(args: string, chatId: string, channel: ChannelType): CommandRes
   switch (sub) {
     case "add": {
       const match = args.match(/add\s+"([^"]+)"\s+"([^"]+)"/);
-      if (!match) return { text: '사용법: !cron add "<스케줄>" "<프롬프트>"' };
+      if (!match) return { text: 'Usage: !cron add "<schedule>" "<prompt>"' };
       const job = addCron(match[1], match[2], channel, chatId);
-      return { text: `✅ 크론잡 등록: ${job.id.slice(0, 8)} (${match[1]})` };
+      return { text: `Cron job added: ${job.id.slice(0, 8)} (${match[1]})` };
     }
     case "remove": {
       const id = parts[1];
-      if (!id) return { text: "사용법: !cron remove <id>" };
+      if (!id) return { text: "Usage: !cron remove <id>" };
       return removeCron(id)
-        ? { text: `🗑️ 크론잡 삭제: ${id}` }
-        : { text: `❌ 찾을 수 없음: ${id}` };
+        ? { text: `Cron job removed: ${id}` }
+        : { text: `Not found: ${id}` };
     }
     case "toggle": {
       const id = parts[1];
-      if (!id) return { text: "사용법: !cron toggle <id>" };
+      if (!id) return { text: "Usage: !cron toggle <id>" };
       const toggled = toggleCron(id);
       return toggled
-        ? { text: `${toggled.enabled ? "✅" : "⏸️"} 크론잡 ${toggled.enabled ? "활성화" : "비활성화"}: ${id}` }
-        : { text: `❌ 찾을 수 없음: ${id}` };
+        ? { text: `Cron job ${toggled.enabled ? "enabled" : "disabled"}: ${id}` }
+        : { text: `Not found: ${id}` };
     }
     default:
-      return { text: '사용법: !cron <add|remove|toggle|list>\n!cron add "<스케줄>" "<프롬프트>"' };
+      return { text: 'Usage: !cron <add|remove|toggle|list>\n!cron add "<schedule>" "<prompt>"' };
   }
 }
 
 function formatSystemInfo(): string {
   const execs = getRecentExecutions(5);
   const lines = [
-    "📊 시스템 정보",
-    `  작업 디렉토리: ${workingDir}`,
-    `  큐: ${getQueueLength()}개`,
+    "System Info",
+    `  Working directory: ${workingDir}`,
+    `  Queue: ${getQueueLength()} item(s)`,
     "",
-    "최근 실행:",
+    "Recent executions:",
   ];
   for (const e of execs) {
     lines.push(
-      `  [${new Date(e.timestamp).toLocaleTimeString("ko-KR")}] ${e.status} (${e.durationMs}ms)`,
+      `  [${new Date(e.timestamp).toLocaleTimeString("en-US")}] ${e.status} (${e.durationMs}ms)`,
     );
   }
   return lines.join("\n");
 }
 
-const HELP_TEXT = `📖 까비 명령어
+const HELP_TEXT = `Kkabi Commands
 
-!cd <경로>          작업 디렉토리 변경
-!pwd               현재 작업 디렉토리
-!status            상태 확인
-!history [N]       대화 기록 (기본 10개)
-!memory [내용]      메모리 보기/추가
-!forget            메모리 초기화
-!system            시스템 정보
-!persona [section]  페르소나 보기/수정
-!cancel            실행 중 작업 취소
-!running           실행 중/대기 작업 보기
-!cron              크론잡 관리
-!help              이 도움말`;
+!cd <path>          Change working directory
+!pwd               Current working directory
+!status            Show status
+!history [N]       Conversation history (default: 10)
+!memory [content]   View/add memory
+!forget            Clear memory
+!system            System info
+!persona [section]  View/edit persona
+!cancel            Cancel running task
+!running           Show running/queued tasks
+!cron              Manage cron jobs
+!help              Show this help`;

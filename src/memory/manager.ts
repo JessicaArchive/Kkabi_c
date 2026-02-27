@@ -44,7 +44,7 @@ function todayLogPath(): string {
 export function appendDailyLog(entry: string): void {
   ensureDirs();
   const logPath = todayLogPath();
-  const timestamp = new Date().toLocaleTimeString("ko-KR");
+  const timestamp = new Date().toLocaleTimeString("en-US");
   const line = `- [${timestamp}] ${entry}\n`;
 
   if (existsSync(logPath)) {

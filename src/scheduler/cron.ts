@@ -35,7 +35,7 @@ export function addCron(
   chatId: string,
 ): CronJob {
   if (!cron.validate(schedule)) {
-    throw new Error(`잘못된 크론 스케줄: ${schedule}`);
+    throw new Error(`Invalid cron schedule: ${schedule}`);
   }
 
   const job: CronJob = {
@@ -106,8 +106,8 @@ function scheduleCron(job: CronJob): void {
     try {
       const result = await promise;
       const text = result.error
-        ? `⏰ [크론] 오류: ${result.error}`
-        : `⏰ [크론] ${result.output}`;
+        ? `[Cron] Error: ${result.error}`
+        : `[Cron] ${result.output}`;
 
       if (sendCallback) {
         await sendCallback(job.channelType, job.chatId, text);

@@ -34,9 +34,9 @@ export async function requestApproval(
   const timeoutMs = config.safety.confirmTimeoutMs;
 
   const warningText =
-    `⚠️ 위험 감지: [${matchedKeywords.join(", ")}]\n` +
-    `요청: "${text.slice(0, 100)}${text.length > 100 ? "..." : ""}"\n\n` +
-    `실행하시겠습니까?`;
+    `Warning — risky keywords detected: [${matchedKeywords.join(", ")}]\n` +
+    `Request: "${text.slice(0, 100)}${text.length > 100 ? "..." : ""}"\n\n` +
+    `Do you want to proceed?`;
 
   return new Promise<boolean>((resolve) => {
     const timer = setTimeout(() => {

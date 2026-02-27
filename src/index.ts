@@ -12,16 +12,16 @@ import type { ChannelType } from "./types.js";
 const channels = new Map<ChannelType, Channel>();
 
 async function main(): Promise<void> {
-  console.log("🐾 까비(Kkabi) 시작 중...");
+  console.log("Kkabi starting up...");
 
   // Load config
   const config = loadConfig();
-  console.log("[Config] 로드 완료");
+  console.log("[Config] Loaded");
 
   // Init DB
   const dbPath = resolve(process.cwd(), "data", "kkabi.db");
   initDb(dbPath);
-  console.log("[DB] 초기화 완료");
+  console.log("[DB] Initialized");
 
   // Clean old logs
   cleanOldLogs();
@@ -48,12 +48,12 @@ async function main(): Promise<void> {
     startAllCrons();
   }
 
-  console.log("🐾 까비 준비 완료!");
+  console.log("Kkabi is ready!");
 }
 
 // Graceful shutdown
 function shutdown(signal: string): void {
-  console.log(`\n[${signal}] 종료 중...`);
+  console.log(`\n[${signal}] Shutting down...`);
 
   cancelCurrent();
   stopAllCrons();
@@ -63,7 +63,7 @@ function shutdown(signal: string): void {
   }
 
   closeDb();
-  console.log("🐾 까비 종료");
+  console.log("Kkabi stopped.");
   process.exit(0);
 }
 
