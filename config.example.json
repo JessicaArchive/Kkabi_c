@@ -1,0 +1,27 @@
+{
+  "channels": {
+    "slack": {
+      "enabled": true,
+      "botToken": "xoxb-your-bot-token",
+      "appToken": "xapp-your-app-token",
+      "allowedChannels": []
+    }
+  },
+  "claude": {
+    "timeoutMs": 300000,
+    "maxConcurrent": 1,
+    "workingDir": "~"
+  },
+  "memory": {
+    "enabled": true,
+    "logRetentionDays": 30
+  },
+  "safety": {
+    "enabled": true,
+    "confirmTimeoutMs": 120000,
+    "keywords": ["rm", "drop", "delete", "reset", "deploy", "push", "삭제", "제거", "초기화"]
+  },
+  "scheduler": {
+    "enabled": true
+  }
+}
