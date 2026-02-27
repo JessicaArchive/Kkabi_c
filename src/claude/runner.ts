@@ -37,7 +37,7 @@ export async function runClaude(
     const proc = spawn("claude", args, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env },
+      env: { ...process.env, CLAUDECODE: undefined },
     });
 
     currentProcess = proc;
