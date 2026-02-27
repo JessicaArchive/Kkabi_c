@@ -6,10 +6,24 @@ import { enqueue } from "../claude/queue.js";
 import { checkSafety, requestApproval } from "../safety/gate.js";
 import { saveMessage, saveExecution } from "../db/store.js";
 import { appendDailyLog } from "../memory/manager.js";
+import { isFirstTime, isInSetup, startOnboarding, handleOnboardingStep } from "./onboarding.js";
 
 export function createHandler(channel: Channel) {
   return async (msg: IncomingMessage): Promise<void> => {
     const { chatId, text, threadId, senderName } = msg;
+
+    // First-time onboarding
+    if (isFirstTime(chatId) && !isInSetup(chatId)) {
+      await startOnboarding(channel, chatId);
+      saveMessage({ role: "user", content: text, channel: msg.channel, chatId, timestamp: msg.timestamp });
+      return;
+    }
+
+    // Onboarding in progress
+    if (isInSetup(chatId)) {
+      const handled = await handleOnboardingStep(channel, chatId, text);
+      if (handled) return;
+    }
 
     // Log incoming message
     saveMessage({
