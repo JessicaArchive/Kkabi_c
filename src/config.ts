@@ -25,6 +25,7 @@ const GitHubConfigSchema = z.object({
   repositories: z.array(GitHubRepoSchema).min(1),
   pollIntervalMs: z.number().positive().default(30_000),
   label: z.string().optional(),
+  assignee: z.string().optional(),
 });
 
 const ChannelsConfigSchema = z.object({
