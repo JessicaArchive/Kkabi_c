@@ -7,6 +7,8 @@ import { checkSafety, requestApproval } from "../safety/gate.js";
 import { saveMessage, saveExecution } from "../db/store.js";
 import { appendDailyLog } from "../memory/manager.js";
 import { isFirstTime, isInSetup, startOnboarding, handleOnboardingStep } from "./onboarding.js";
+import { parseCronTags } from "./cronParser.js";
+import { executeCronActions } from "./cronExecutor.js";
 
 export function createHandler(channel: Channel) {
   return async (msg: IncomingMessage): Promise<void> => {
@@ -90,8 +92,28 @@ export function createHandler(channel: Channel) {
         return;
       }
 
-      // Send response (edit the pending message)
-      const response = result.output || "(empty response)";
+      // Post-process cron tags from Claude's response
+      let response = result.output || "(empty response)";
+      const { actions, cleanedResponse } = parseCronTags(response);
+
+      if (actions.length > 0) {
+        const cronResults = executeCronActions(actions, msg.channel, chatId);
+        response = cleanedResponse;
+
+        // Append cron result messages
+        const extras: string[] = [];
+        for (const r of cronResults) {
+          if (!r.success) {
+            extras.push(`⚠ ${r.message}`);
+          } else if (actions.some((a) => a.type === "list")) {
+            extras.push(r.message);
+          }
+        }
+        if (extras.length > 0) {
+          response = response + "\n\n" + extras.join("\n");
+        }
+      }
+
       await channel.editMessage(chatId, pendingMsgId, response);
 
       // Save conversation
