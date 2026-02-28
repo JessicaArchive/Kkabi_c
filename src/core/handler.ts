@@ -1,14 +1,35 @@
 import type { Channel } from "../channels/base.js";
-import type { IncomingMessage } from "../types.js";
+import type { ChannelType, IncomingMessage } from "../types.js";
 import { isCommand, executeCommand } from "./commands.js";
 import { buildPrompt } from "../claude/context.js";
 import { enqueue } from "../claude/queue.js";
+import { getConfig, getRepoName } from "../config.js";
 import { checkSafety, requestApproval } from "../safety/gate.js";
 import { saveMessage, saveExecution } from "../db/store.js";
 import { appendDailyLog } from "../memory/manager.js";
 import { isFirstTime, isInSetup, startOnboarding, handleOnboardingStep } from "./onboarding.js";
 import { parseCronTags } from "./cronParser.js";
 import { executeCronActions } from "./cronExecutor.js";
+
+function resolveWorkingDir(chatId: string, channelType: ChannelType): string | undefined {
+  const config = getConfig();
+  if (channelType === "github") {
+    const match = chatId.match(/^(.+?\/.+?)#\d+$/);
+    if (match) {
+      const repoName = match[1];
+      if (config.claude.projects[repoName]) {
+        return config.claude.projects[repoName];
+      }
+      const repoEntry = config.channels.github?.repositories.find((r) => {
+        return getRepoName(r) === repoName;
+      });
+      if (repoEntry && typeof repoEntry === "object" && "workingDir" in repoEntry && repoEntry.workingDir) {
+        return repoEntry.workingDir;
+      }
+    }
+  }
+  return undefined;
+}
 
 export function createHandler(channel: Channel) {
   return async (msg: IncomingMessage): Promise<void> => {
@@ -65,7 +86,8 @@ export function createHandler(channel: Channel) {
 
     // Build prompt and enqueue
     const prompt = buildPrompt(text, chatId);
-    const { promise, position } = enqueue(prompt, chatId, msg.channel);
+    const workingDir = resolveWorkingDir(chatId, msg.channel);
+    const { promise, position } = enqueue(prompt, chatId, msg.channel, workingDir);
 
     if (position > 1) {
       await channel.editMessage(chatId, pendingMsgId, `Waiting in queue... (position ${position})`);

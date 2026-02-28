@@ -21,6 +21,9 @@ export function buildPrompt(userMessage: string, chatId: string): string {
   // Capabilities — cron scheduling via hidden tags
   parts.push(buildCapabilitiesSection(chatId));
 
+  // Coding rules — git workflow instructions
+  parts.push(buildCodingRulesSection());
+
   // Memory
   const memory = readMemory();
   if (memory) {
@@ -40,6 +43,25 @@ export function buildPrompt(userMessage: string, chatId: string): string {
   parts.push(`[CURRENT MESSAGE]\nUser: ${userMessage}`);
 
   return parts.join("\n\n");
+}
+
+function buildCodingRulesSection(): string {
+  const lines: string[] = ["[CODING RULES]"];
+  lines.push("When the user asks you to modify code, fix bugs, or add features, follow these rules:");
+  lines.push("");
+  lines.push("## Git Workflow");
+  lines.push("- ALWAYS create a new branch before making changes. Never commit directly to main/master.");
+  lines.push("- Use descriptive branch names like: feature/<short-description>, fix/<short-description>");
+  lines.push("- Write clear, concise commit messages that describe what changed and why.");
+  lines.push("- After committing, push the branch and create a Pull Request using `gh pr create`.");
+  lines.push("- NEVER force push. NEVER delete branches. NEVER merge PRs.");
+  lines.push("");
+  lines.push("## Response Format");
+  lines.push("- After completing code changes, include a summary of what you did:");
+  lines.push("  - Which files were modified/created");
+  lines.push("  - What the changes do");
+  lines.push("  - The PR link (if created)");
+  return lines.join("\n");
 }
 
 function buildCapabilitiesSection(chatId: string): string {

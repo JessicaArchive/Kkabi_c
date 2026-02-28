@@ -9,12 +9,20 @@ const SlackConfigSchema = z.object({
   allowedChannels: z.array(z.string()).default([]),
 });
 
+const GitHubRepoSchema = z.union([
+  z.string(),
+  z.object({
+    name: z.string().min(1),
+    workingDir: z.string().optional(),
+  }),
+]);
+
 const GitHubConfigSchema = z.object({
   enabled: z.boolean().default(false),
   appId: z.number(),
   installationId: z.number(),
   privateKeyPath: z.string().min(1),
-  repositories: z.array(z.string()).min(1),
+  repositories: z.array(GitHubRepoSchema).min(1),
   pollIntervalMs: z.number().positive().default(30_000),
   label: z.string().optional(),
 });
@@ -28,6 +36,8 @@ const ClaudeConfigSchema = z.object({
   timeoutMs: z.number().positive().default(300_000),
   maxConcurrent: z.number().positive().default(1),
   workingDir: z.string().default("~"),
+  projects: z.record(z.string(), z.string()).default({}),
+  disallowedTools: z.array(z.string()).default([]),
 });
 
 const MemoryConfigSchema = z.object({
@@ -40,6 +50,7 @@ const SafetyConfigSchema = z.object({
   confirmTimeoutMs: z.number().positive().default(120_000),
   keywords: z.array(z.string()).default([
     "rm", "drop", "delete", "reset", "deploy", "push",
+    "force", "merge", "rebase",
     "삭제", "제거", "초기화",
   ]),
 });
@@ -59,6 +70,11 @@ const ConfigSchema = z.object({
 export type AppConfig = z.infer<typeof ConfigSchema>;
 export type SlackConfig = z.infer<typeof SlackConfigSchema>;
 export type GitHubConfig = z.infer<typeof GitHubConfigSchema>;
+export type GitHubRepo = z.infer<typeof GitHubRepoSchema>;
+
+export function getRepoName(repo: GitHubRepo): string {
+  return typeof repo === "string" ? repo : repo.name;
+}
 
 let _config: AppConfig | null = null;
 
