@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Channel } from "./base.js";
 import type { ChannelType, IncomingMessage } from "../types.js";
-import type { GitHubConfig } from "../config.js";
+import { getRepoName, type GitHubConfig } from "../config.js";
 
 const MAX_COMMENT_LENGTH = 65536;
 const REACTION_POLL_INTERVAL_MS = 5_000;
@@ -47,7 +47,7 @@ export class GitHubChannel implements Channel {
     }, this.config.pollIntervalMs);
 
     console.log(
-      `[GitHub] Polling ${this.config.repositories.join(", ")} every ${this.config.pollIntervalMs}ms`,
+      `[GitHub] Polling ${this.config.repositories.map(r => getRepoName(r)).join(", ")} every ${this.config.pollIntervalMs}ms`,
     );
   }
 
@@ -66,7 +66,8 @@ export class GitHubChannel implements Channel {
     this.lastChecked = new Date().toISOString();
     console.log(`[GitHub] Polling since ${since}`);
 
-    for (const repo of this.config.repositories) {
+    for (const repoEntry of this.config.repositories) {
+      const repo = getRepoName(repoEntry);
       const [owner, repoName] = repo.split("/");
       try {
         await this.pollRepo(owner, repoName, since);

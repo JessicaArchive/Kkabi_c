@@ -42,6 +42,7 @@ export interface QueueItem {
   prompt: string;
   chatId: string;
   channel: ChannelType;
+  workingDir?: string;
   resolve: (result: ClaudeResult) => void;
   reject: (error: Error) => void;
 }

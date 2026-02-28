@@ -30,10 +30,15 @@ export async function runClaude(
 ): Promise<ClaudeResult> {
   const config = getConfig();
   const timeout = config.claude.timeoutMs;
-  const cwd = workingDir ?? config.claude.workingDir.replace("~", process.env.HOME ?? "");
+  const raw = workingDir ?? config.claude.workingDir;
+  const cwd = raw.startsWith("~") ? raw.replace(/^~/, process.env.HOME ?? "") : raw;
 
   return new Promise<ClaudeResult>((resolve) => {
     const args = ["-p", prompt, "--output-format", "text"];
+    const disallowed = config.claude.disallowedTools;
+    if (disallowed.length > 0) {
+      args.push("--disallowedTools", ...disallowed);
+    }
     const proc = spawn("claude", args, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],

@@ -17,11 +17,12 @@ export function enqueue(
   prompt: string,
   chatId: string,
   channel: ChannelType,
+  workingDir?: string,
 ): { promise: Promise<ClaudeResult>; position: number; id: string } {
   const id = randomUUID();
 
   const promise = new Promise<ClaudeResult>((resolve, reject) => {
-    queue.push({ id, prompt, chatId, channel, resolve, reject });
+    queue.push({ id, prompt, chatId, channel, workingDir, resolve, reject });
   });
 
   const position = queue.length;
@@ -51,7 +52,7 @@ async function processNext(): Promise<void> {
   const item = queue.shift()!;
 
   try {
-    const result = await runClaude(item.prompt, item.id);
+    const result = await runClaude(item.prompt, item.id, item.workingDir);
     item.resolve(result);
   } catch (err) {
     item.reject(err instanceof Error ? err : new Error(String(err)));
