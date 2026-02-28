@@ -11,7 +11,9 @@ const SlackConfigSchema = z.object({
 
 const GitHubConfigSchema = z.object({
   enabled: z.boolean().default(false),
-  token: z.string().min(1),
+  appId: z.number(),
+  installationId: z.number(),
+  privateKeyPath: z.string().min(1),
   repositories: z.array(z.string()).min(1),
   pollIntervalMs: z.number().positive().default(30_000),
   label: z.string().optional(),

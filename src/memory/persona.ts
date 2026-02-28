@@ -7,6 +7,7 @@ const PERSONA_DIR = join(DATA_DIR, "persona");
 const SOUL_FILE = join(PERSONA_DIR, "SOUL.md");
 const USER_FILE = join(PERSONA_DIR, "USER.md");
 const MOOD_FILE = join(PERSONA_DIR, "MOOD.md");
+const LANG_FILE = join(PERSONA_DIR, "LANG.txt");
 
 const DEFAULT_SOUL = `# Kkabi
 - AI assistant for workplace tasks
@@ -68,4 +69,24 @@ export function updateMood(content: string): void {
 export function getPersonaSection(section: "soul" | "user" | "mood"): string {
   const persona = loadPersona();
   return persona[section];
+}
+
+export type Lang = "ko" | "en";
+
+export function getLang(): Lang {
+  ensureDir();
+  if (existsSync(LANG_FILE)) {
+    const val = readFileSync(LANG_FILE, "utf-8").trim();
+    if (val === "ko" || val === "en") return val;
+  }
+  return "en";
+}
+
+export function setLang(lang: Lang): void {
+  ensureDir();
+  writeFileSync(LANG_FILE, lang, "utf-8");
+}
+
+export function isOnboardingDone(): boolean {
+  return existsSync(LANG_FILE);
 }

@@ -13,7 +13,7 @@ export function createHandler(channel: Channel) {
     const { chatId, text, threadId, senderName } = msg;
 
     // First-time onboarding
-    if (isFirstTime(chatId) && !isInSetup(chatId)) {
+    if (isFirstTime() && !isInSetup(chatId)) {
       await startOnboarding(channel, chatId);
       saveMessage({ role: "user", content: text, channel: msg.channel, chatId, timestamp: msg.timestamp });
       return;

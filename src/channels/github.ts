@@ -1,4 +1,7 @@
 import { Octokit } from "octokit";
+import { createAppAuth } from "@octokit/auth-app";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { Channel } from "./base.js";
 import type { ChannelType, IncomingMessage } from "../types.js";
 import type { GitHubConfig } from "../config.js";
@@ -14,15 +17,28 @@ export class GitHubChannel implements Channel {
   private timer: ReturnType<typeof setInterval> | null = null;
   private botUsername = "";
   private lastChecked = new Date().toISOString();
+  private processedIds = new Set<string>();
 
   constructor(private config: GitHubConfig) {
-    this.octokit = new Octokit({ auth: config.token });
+    const privateKey = readFileSync(
+      resolve(process.cwd(), config.privateKeyPath),
+      "utf-8",
+    );
+    this.octokit = new Octokit({
+      authStrategy: createAppAuth,
+      auth: {
+        appId: config.appId,
+        privateKey,
+        installationId: config.installationId,
+      },
+    });
   }
 
   async start(): Promise<void> {
-    const { data } = await this.octokit.rest.users.getAuthenticated();
-    this.botUsername = data.login;
-    console.log(`[GitHub] Authenticated as @${this.botUsername}`);
+    // GitHub App bots have a login like "app-name[bot]"
+    const { data: app } = await this.octokit.rest.apps.getAuthenticated() as { data: { slug?: string } | null };
+    this.botUsername = `${app?.slug ?? "bot"}[bot]`;
+    console.log(`[GitHub] Authenticated as ${this.botUsername}`);
 
     // Run first poll immediately, then on interval
     await this.poll();
@@ -44,12 +60,19 @@ export class GitHubChannel implements Channel {
   }
 
   private async poll(): Promise<void> {
-    const since = this.lastChecked;
+    // Subtract 2 seconds to avoid missing issues due to millisecond precision mismatch
+    const sinceDate = new Date(new Date(this.lastChecked).getTime() - 2000);
+    const since = sinceDate.toISOString();
     this.lastChecked = new Date().toISOString();
+    console.log(`[GitHub] Polling since ${since}`);
 
     for (const repo of this.config.repositories) {
       const [owner, repoName] = repo.split("/");
-      await this.pollRepo(owner, repoName, since);
+      try {
+        await this.pollRepo(owner, repoName, since);
+      } catch (err) {
+        console.error(`[GitHub] Error polling ${repo}:`, err);
+      }
     }
   }
 
@@ -69,6 +92,7 @@ export class GitHubChannel implements Channel {
     }
 
     const { data: issues } = await this.octokit.rest.issues.listForRepo(params);
+    console.log(`[GitHub] Found ${issues.length} issues in ${owner}/${repo}`);
 
     for (const issue of issues) {
       // Skip pull requests (GitHub API returns PRs in issues endpoint)
@@ -78,9 +102,13 @@ export class GitHubChannel implements Channel {
 
       // Check if the issue body itself is new (created since last poll)
       const createdAt = new Date(issue.created_at).toISOString();
-      if (createdAt > since && issue.user?.login !== this.botUsername) {
+      console.log(`[GitHub] Issue #${issue.number} "${issue.title}" created=${createdAt} since=${since} by=${issue.user?.login}`);
+      const issueKey = `issue-${issue.number}`;
+      if (issue.user?.login === this.botUsername) continue;
+      if (createdAt >= since && !this.processedIds.has(issueKey)) {
+        this.processedIds.add(issueKey);
         const incoming: IncomingMessage = {
-          id: `issue-${issue.number}`,
+          id: issueKey,
           channel: "github",
           chatId,
           senderId: issue.user?.login ?? "unknown",
@@ -101,14 +129,18 @@ export class GitHubChannel implements Channel {
       });
 
       for (const comment of comments) {
-        // Skip own comments
+        // Skip comments posted by this bot
         if (comment.user?.login === this.botUsername) continue;
 
         // Skip comments that were created before our since window
-        if (new Date(comment.created_at).toISOString() <= since) continue;
+        if (new Date(comment.created_at).toISOString() < since) continue;
+
+        const commentKey = `comment-${comment.id}`;
+        if (this.processedIds.has(commentKey)) continue;
+        this.processedIds.add(commentKey);
 
         const incoming: IncomingMessage = {
-          id: `comment-${comment.id}`,
+          id: commentKey,
           channel: "github",
           chatId,
           senderId: comment.user?.login ?? "unknown",
