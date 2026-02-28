@@ -99,6 +99,12 @@ export class GitHubChannel implements Channel {
       // Skip pull requests (GitHub API returns PRs in issues endpoint)
       if (issue.pull_request) continue;
 
+      // Skip issues not assigned to this bot's configured assignee
+      if (this.config.assignee) {
+        const assignees = issue.assignees?.map((a) => a.login) ?? [];
+        if (!assignees.includes(this.config.assignee)) continue;
+      }
+
       const chatId = `${owner}/${repo}#${issue.number}`;
 
       // Check if the issue body itself is new (created since last poll)
