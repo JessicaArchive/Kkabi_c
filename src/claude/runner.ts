@@ -34,7 +34,7 @@ export async function runClaude(
   const cwd = raw.startsWith("~") ? raw.replace(/^~/, process.env.HOME ?? "") : raw;
 
   return new Promise<ClaudeResult>((resolve) => {
-    const args = ["-p", prompt, "--output-format", "text"];
+    const args = ["-p", prompt, "--output-format", "text", "--dangerously-skip-permissions"];
     const disallowed = config.claude.disallowedTools;
     if (disallowed.length > 0) {
       args.push("--disallowedTools", ...disallowed);
