@@ -9,8 +9,17 @@ const SlackConfigSchema = z.object({
   allowedChannels: z.array(z.string()).default([]),
 });
 
+const GitHubConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  token: z.string().min(1),
+  repositories: z.array(z.string()).min(1),
+  pollIntervalMs: z.number().positive().default(30_000),
+  label: z.string().optional(),
+});
+
 const ChannelsConfigSchema = z.object({
   slack: SlackConfigSchema.optional(),
+  github: GitHubConfigSchema.optional(),
 });
 
 const ClaudeConfigSchema = z.object({
@@ -47,6 +56,7 @@ const ConfigSchema = z.object({
 
 export type AppConfig = z.infer<typeof ConfigSchema>;
 export type SlackConfig = z.infer<typeof SlackConfigSchema>;
+export type GitHubConfig = z.infer<typeof GitHubConfigSchema>;
 
 let _config: AppConfig | null = null;
 

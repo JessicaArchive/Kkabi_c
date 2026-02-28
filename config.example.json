@@ -5,6 +5,13 @@
       "botToken": "xoxb-your-bot-token",
       "appToken": "xapp-your-app-token",
       "allowedChannels": []
+    },
+    "github": {
+      "enabled": false,
+      "token": "ghp_your-github-pat",
+      "repositories": ["owner/repo"],
+      "pollIntervalMs": 30000,
+      "label": "kkabi"
     }
   },
   "claude": {
