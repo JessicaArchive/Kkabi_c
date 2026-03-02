@@ -18,7 +18,7 @@ export function executeCronActions(
     switch (action.type) {
       case "add": {
         try {
-          const job = addCron(action.schedule, action.prompt, channelType, chatId);
+          const job = addCron(action.schedule, action.prompt, channelType, chatId, action.agentId);
           results.push({
             success: true,
             message: `Cron registered: \`${job.schedule}\` (ID: ${job.id.slice(0, 8)})`,

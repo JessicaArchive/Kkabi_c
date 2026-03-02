@@ -2,6 +2,7 @@ import { getRecentConversation } from "../db/store.js";
 import { readMemory } from "../memory/manager.js";
 import { loadPersona, getLang } from "../memory/persona.js";
 import { listCrons } from "../scheduler/cron.js";
+import { loadAgents } from "../agents/store.js";
 
 export function buildPrompt(userMessage: string, chatId: string): string {
   const parts: string[] = [];
@@ -76,6 +77,8 @@ function buildCapabilitiesSection(chatId: string): string {
   lines.push("## Cron Tag Format");
   lines.push("To register a new cron job:");
   lines.push('  <!--CRON_JOB:{"schedule":"<cron expression>","prompt":"<task prompt>"}-->');
+  lines.push("To register a cron job with an agent:");
+  lines.push('  <!--CRON_JOB:{"schedule":"<cron expression>","prompt":"<task prompt>","agentId":"<agent id>"}-->');
   lines.push("To remove an existing cron job:");
   lines.push('  <!--CRON_REMOVE:{"id":"<id prefix>"}-->');
   lines.push("To list all cron jobs:");
@@ -100,6 +103,17 @@ function buildCapabilitiesSection(chatId: string): string {
   lines.push("- Place tags at the END of your response, after your natural language text.");
   if (lang === "ko") {
     lines.push("- Respond in Korean.");
+  }
+  lines.push("");
+
+  // Available agents
+  const agents = loadAgents();
+  if (agents.length > 0) {
+    lines.push("## Available Agents");
+    lines.push("When the user mentions a specific agent, include the agentId in the CRON_JOB tag.");
+    for (const a of agents) {
+      lines.push(`- ${a.id}: ${a.name}${a.model ? ` (${a.model})` : ""}`);
+    }
   }
   lines.push("");
 

@@ -1,5 +1,5 @@
 export type CronAction =
-  | { type: "add"; schedule: string; prompt: string }
+  | { type: "add"; schedule: string; prompt: string; agentId?: string }
   | { type: "remove"; id: string }
   | { type: "list" };
 
@@ -18,9 +18,9 @@ export function parseCronTags(response: string): ParseResult {
   // Parse add actions
   for (const match of response.matchAll(CRON_JOB_RE)) {
     try {
-      const payload = JSON.parse(match[1]) as { schedule: string; prompt: string };
+      const payload = JSON.parse(match[1]) as { schedule: string; prompt: string; agentId?: string };
       if (payload.schedule && payload.prompt) {
-        actions.push({ type: "add", schedule: payload.schedule, prompt: payload.prompt });
+        actions.push({ type: "add", schedule: payload.schedule, prompt: payload.prompt, ...(payload.agentId ? { agentId: payload.agentId } : {}) });
       }
     } catch {
       // Skip malformed tags
