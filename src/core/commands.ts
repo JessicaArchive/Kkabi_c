@@ -6,7 +6,16 @@ import { readMemory, appendMemory, clearMemory } from "../memory/manager.js";
 import { loadPersona, updateSoul, updateUser, updateMood } from "../memory/persona.js";
 import { cancelCurrent, isRunning, getCurrentPromptId } from "../claude/runner.js";
 import { getQueueLength, getQueueItems } from "../claude/queue.js";
-import { addCron, removeCron, listCrons, toggleCron } from "../scheduler/cron.js";
+import {
+  addCron,
+  removeCron,
+  listCrons,
+  toggleCron,
+  getCron,
+  runCronNow,
+  reloadCrons,
+} from "../scheduler/cron.js";
+import { loadAgents, getAgent, reloadAgents } from "../agents/store.js";
 
 let workingDir = process.env.HOME ?? process.cwd();
 
@@ -51,6 +60,8 @@ export async function executeCommand(
       return cmdRunning();
     case "cron":
       return cmdCron(args, chatId, channel);
+    case "agent":
+      return cmdAgent(args);
     case "help":
       return { text: HELP_TEXT };
     default:
@@ -159,14 +170,18 @@ function cmdRunning(): CommandResult {
   return { text: lines.join("\n") };
 }
 
+// --- !cron ---
+
 function cmdCron(args: string, chatId: string, channel: ChannelType): CommandResult {
   if (!args) {
     const crons = listCrons();
     if (crons.length === 0) return { text: "No cron jobs registered." };
-    const lines = crons.map(
-      (c) =>
-        `${c.enabled ? "ON" : "OFF"} [${c.id.slice(0, 8)}] ${c.schedule} -> ${c.prompt.slice(0, 40)}`,
-    );
+    const lines = crons.map((c) => {
+      const status = c.enabled ? "ON" : "OFF";
+      const lastStatus = c.state?.lastStatus ?? "-";
+      const agentTag = c.agentId ? ` [${c.agentId}]` : "";
+      return `${status} [${c.id.slice(0, 8)}] ${c.schedule} | ${lastStatus} | ${c.name}${agentTag}`;
+    });
     return { text: lines.join("\n") };
   }
 
@@ -195,10 +210,122 @@ function cmdCron(args: string, chatId: string, channel: ChannelType): CommandRes
         ? { text: `Cron job ${toggled.enabled ? "enabled" : "disabled"}: ${id}` }
         : { text: `Not found: ${id}` };
     }
+    case "run": {
+      const id = parts[1];
+      if (!id) return { text: "Usage: !cron run <id>" };
+      const msg = runCronNow(id);
+      return { text: msg instanceof Promise ? "Starting..." : msg };
+    }
+    case "status": {
+      const id = parts[1];
+      return cmdCronStatus(id);
+    }
+    case "reload": {
+      const count = reloadCrons();
+      return { text: `Crons reloaded. ${count} active job(s).` };
+    }
     default:
-      return { text: 'Usage: !cron <add|remove|toggle|list>\n!cron add "<schedule>" "<prompt>"' };
+      return { text: 'Usage: !cron <add|remove|toggle|run|status|reload>\n!cron add "<schedule>" "<prompt>"' };
   }
 }
+
+function cmdCronStatus(id?: string): CommandResult {
+  if (!id) {
+    // Show summary of all cron jobs
+    const crons = listCrons();
+    if (crons.length === 0) return { text: "No cron jobs registered." };
+    const lines: string[] = [];
+    for (const c of crons) {
+      const status = c.enabled ? "ON" : "OFF";
+      const lastRun = c.state?.lastRunAtMs ? new Date(c.state.lastRunAtMs).toISOString() : "never";
+      const duration = c.state?.lastDurationMs != null ? `${(c.state.lastDurationMs / 1000).toFixed(1)}s` : "-";
+      const errors = c.state?.consecutiveErrors ?? 0;
+      const lastStatus = c.state?.lastStatus ?? "-";
+      lines.push(`${status} [${c.id.slice(0, 8)}] ${c.name}`);
+      lines.push(`  ${c.schedule} | ${lastStatus} | last: ${lastRun} | ${duration} | errors: ${errors}`);
+      if (c.state?.lastError) {
+        lines.push(`  error: ${c.state.lastError.slice(0, 100)}`);
+      }
+    }
+    return { text: lines.join("\n") };
+  }
+
+  const job = getCron(id);
+  if (!job) return { text: `Not found: ${id}` };
+
+  const lastRun = job.state?.lastRunAtMs ? new Date(job.state.lastRunAtMs).toISOString() : "never";
+  const duration = job.state?.lastDurationMs != null ? `${(job.state.lastDurationMs / 1000).toFixed(1)}s` : "-";
+  const errors = job.state?.consecutiveErrors ?? 0;
+
+  const lines = [
+    `Cron Job: ${job.name} (${job.enabled ? "enabled" : "disabled"})`,
+    `  ID: ${job.id}`,
+    `  Schedule: ${job.schedule}`,
+    `  Status: ${job.state?.lastStatus ?? "-"}`,
+    `  Last run: ${lastRun}`,
+    `  Duration: ${duration}`,
+    `  Consecutive errors: ${errors}`,
+  ];
+  if (job.agentId) lines.push(`  Agent: ${job.agentId}`);
+  if (job.model) lines.push(`  Model: ${job.model}`);
+  if (job.promptPath) lines.push(`  Prompt file: ${job.promptPath}`);
+  if (job.state?.lastError) lines.push(`  Last error: ${job.state.lastError}`);
+  return { text: lines.join("\n") };
+}
+
+// --- !agent ---
+
+function cmdAgent(args: string): CommandResult {
+  if (!args) {
+    return cmdAgentList();
+  }
+
+  const parts = args.split(" ");
+  const sub = parts[0];
+
+  switch (sub) {
+    case "show": {
+      const id = parts.slice(1).join(" ").trim();
+      return cmdAgentShow(id);
+    }
+    case "reload": {
+      const agents = reloadAgents();
+      return { text: `Agents reloaded. ${agents.length} agent(s) loaded.` };
+    }
+    default:
+      return { text: "Usage: !agent [show <id> | reload]" };
+  }
+}
+
+function cmdAgentList(): CommandResult {
+  const agents = loadAgents();
+  if (agents.length === 0) return { text: "No agents configured. Add definitions to data/agents.json" };
+  const lines = agents.map((a) => {
+    const model = a.model ?? "default";
+    return `${a.id}: ${a.name} (${model})`;
+  });
+  return { text: lines.join("\n") };
+}
+
+function cmdAgentShow(id: string): CommandResult {
+  if (!id) return { text: "Usage: !agent show <id>" };
+  const agent = getAgent(id);
+  if (!agent) return { text: `Agent "${id}" not found.` };
+
+  const lines = [
+    `Agent: ${agent.name}`,
+    `  ID: ${agent.id}`,
+    `  Model: ${agent.model ?? "default"}`,
+    `  Working dir: ${agent.workingDir ?? "-"}`,
+    `  Timeout: ${agent.timeoutMs ? `${agent.timeoutMs / 1000}s` : "-"}`,
+  ];
+  if (agent.persona) {
+    lines.push(`  Persona: ${agent.persona.slice(0, 100)}${agent.persona.length > 100 ? "..." : ""}`);
+  }
+  return { text: lines.join("\n") };
+}
+
+// --- Utilities ---
 
 function formatSystemInfo(): string {
   const execs = getRecentExecutions(5);
@@ -229,5 +356,14 @@ const HELP_TEXT = `Kkabi Commands
 !persona [section]  View/edit persona
 !cancel            Cancel running task
 !running           Show running/queued tasks
-!cron              Manage cron jobs
+!cron              List cron jobs
+!cron add "<s>" "<p>" Add cron job
+!cron remove <id>  Remove cron job
+!cron toggle <id>  Enable/disable cron job
+!cron run <id>     Force run cron job
+!cron status [id]  Show cron job status
+!cron reload       Reload crons from file
+!agent             List agents
+!agent show <id>   Show agent details
+!agent reload      Reload agents from file
 !help              Show this help`;

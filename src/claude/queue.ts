@@ -13,16 +13,23 @@ export function getQueueItems(): QueueItem[] {
   return [...queue];
 }
 
+export interface EnqueueOptions {
+  prompt: string;
+  chatId: string;
+  channel: ChannelType;
+  workingDir?: string;
+  model?: string;
+  timeoutMs?: number;
+}
+
 export function enqueue(
-  prompt: string,
-  chatId: string,
-  channel: ChannelType,
-  workingDir?: string,
+  options: EnqueueOptions,
 ): { promise: Promise<ClaudeResult>; position: number; id: string } {
+  const { prompt, chatId, channel, workingDir, model, timeoutMs } = options;
   const id = randomUUID();
 
   const promise = new Promise<ClaudeResult>((resolve, reject) => {
-    queue.push({ id, prompt, chatId, channel, workingDir, resolve, reject });
+    queue.push({ id, prompt, chatId, channel, workingDir, model, timeoutMs, resolve, reject });
   });
 
   const position = queue.length;
@@ -52,7 +59,13 @@ async function processNext(): Promise<void> {
   const item = queue.shift()!;
 
   try {
-    const result = await runClaude(item.prompt, item.id, item.workingDir);
+    const result = await runClaude({
+      prompt: item.prompt,
+      promptId: item.id,
+      workingDir: item.workingDir,
+      model: item.model,
+      timeoutMs: item.timeoutMs,
+    });
     item.resolve(result);
   } catch (err) {
     item.reject(err instanceof Error ? err : new Error(String(err)));

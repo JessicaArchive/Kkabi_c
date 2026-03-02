@@ -23,18 +23,26 @@ export function cancelCurrent(): boolean {
   return false;
 }
 
-export async function runClaude(
-  prompt: string,
-  promptId: string,
-  workingDir?: string,
-): Promise<ClaudeResult> {
+export interface RunClaudeOptions {
+  prompt: string;
+  promptId: string;
+  workingDir?: string;
+  model?: string;
+  timeoutMs?: number;
+}
+
+export async function runClaude(options: RunClaudeOptions): Promise<ClaudeResult> {
+  const { prompt, promptId, workingDir, model, timeoutMs } = options;
   const config = getConfig();
-  const timeout = config.claude.timeoutMs;
+  const timeout = timeoutMs ?? config.claude.timeoutMs;
   const raw = workingDir ?? config.claude.workingDir;
   const cwd = raw.startsWith("~") ? raw.replace(/^~/, process.env.HOME ?? "") : raw;
 
   return new Promise<ClaudeResult>((resolve) => {
     const args = ["-p", prompt, "--output-format", "text", "--dangerously-skip-permissions"];
+    if (model) {
+      args.push("--model", model);
+    }
     const disallowed = config.claude.disallowedTools;
     if (disallowed.length > 0) {
       args.push("--disallowedTools", ...disallowed);

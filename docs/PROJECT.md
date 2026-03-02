@@ -26,31 +26,33 @@ Kkabi_c is a multi-channel AI assistant that bridges messaging platforms (Slack,
 src/
 ├── index.ts              # Entry point — boots channels, DB, cron
 ├── config.ts             # Zod schema for config.json validation
-├── types.ts              # Shared TypeScript types
+├── types.ts              # Shared TypeScript types (Agent, CronJob, etc.)
 ├── channels/
 │   ├── base.ts           # Channel interface (sendText, sendConfirm, etc.)
 │   ├── slack.ts          # Slack via @slack/bolt (Socket Mode)
 │   └── github.ts         # GitHub Issues via octokit (polling)
 ├── core/
 │   ├── handler.ts        # Main message handler (onboard → cmd → safety → claude)
-│   ├── commands.ts       # ! commands (!help, !cd, !persona, !cron, etc.)
+│   ├── commands.ts       # ! commands (!help, !cd, !persona, !cron, !agent, etc.)
 │   └── onboarding.ts     # First-time user setup (bilingual KO/EN)
 ├── claude/
-│   ├── runner.ts         # Spawns `claude -p` subprocess
+│   ├── runner.ts         # Spawns `claude -p` subprocess (supports --model override)
 │   ├── context.ts        # Builds prompt (persona + memory + history + message)
 │   └── queue.ts          # FIFO queue for sequential processing
+├── agents/
+│   └── store.ts          # Agent CRUD, Zod validation, cached reads
 ├── memory/
 │   ├── persona.ts        # SOUL.md, USER.md, MOOD.md, LANG.txt management
 │   └── manager.ts        # MEMORY.md and daily logs (data/memory/logs/)
 ├── safety/
 │   └── gate.ts           # Keyword scanning + approval flow
 ├── scheduler/
-│   └── cron.ts           # Cron job management (node-cron)
+│   └── cron.ts           # Cron scheduling, state tracking, agent integration, JSONL run logs
 └── db/
     └── store.ts          # SQLite (better-sqlite3) — conversations & executions
 ```
 
-### Data Directory (`data/` — gitignored)
+### Data Directory (`data/` — gitignored, user-owned)
 
 ```
 data/
@@ -64,9 +66,15 @@ data/
 │   ├── MEMORY.md         # Persistent notes
 │   └── logs/
 │       └── YYYY-MM-DD.md # Daily activity logs (auto-cleaned after 30 days)
-├── crons.json            # Scheduled jobs
+├── crons.json            # Scheduled jobs + per-job state (runtime-mutable)
+├── cron-runs/            # JSONL run logs per cron job
+├── agents.json           # Agent definitions (reusable persona/model/dir configs)
 └── uploads/              # File uploads (if any)
 ```
+
+Program code (`src/`) and user data (`data/`, `config.json`) are fully separated.
+Cron jobs live in `data/crons.json` and agent definitions in `data/agents.json` — both gitignored.
+Program updates never touch user workflows.
 
 ---
 
@@ -210,10 +218,16 @@ User message arrives
 | `!persona [section] [text]` | View or edit soul/user/mood |
 | `!cancel` | Cancel currently running claude task |
 | `!running` | Show running task and queue |
+| `!cron` | List all cron jobs |
 | `!cron add "schedule" "prompt"` | Add a cron job |
 | `!cron remove <id>` | Remove a cron job |
 | `!cron toggle <id>` | Enable/disable a cron job |
-| `!cron list` | List all cron jobs |
+| `!cron run <id>` | Force run a cron job now |
+| `!cron status [id]` | Show cron job state details |
+| `!cron reload` | Reload crons from file |
+| `!agent` | List all agents |
+| `!agent show <id>` | Show agent details |
+| `!agent reload` | Reload agents from file |
 | `!system` | Show system info + recent executions |
 | `!help` | Show command help |
 
@@ -300,6 +314,92 @@ SQLite with WAL mode. Two tables:
 
 - `src/channels/github.ts:93` — Restore bot self-skip when using a dedicated bot account
 - `src/types.ts:1` — `gchat` channel type defined but not implemented
+
+---
+
+## Agents
+
+Agents are reusable persona/model/directory configurations that can be referenced by cron jobs. Definitions live in `data/agents.json` (runtime-mutable).
+
+### Configuration
+
+Create `data/agents.json`:
+
+```json
+{
+  "version": 1,
+  "agents": [
+    {
+      "id": "planner",
+      "name": "Planner Agent",
+      "model": "claude-opus-4-20250514",
+      "persona": "You are a technical planner...",
+      "workingDir": "~/work_test",
+      "timeoutMs": 600000
+    },
+    {
+      "id": "developer",
+      "name": "Developer Agent",
+      "model": "claude-sonnet-4-20250514",
+      "workingDir": "~/work_test"
+    }
+  ]
+}
+```
+
+### Usage
+
+| Command | Description |
+|---------|-------------|
+| `!agent` | List all agents |
+| `!agent show <id>` | Show agent details (model, dir, persona) |
+| `!agent reload` | Re-read `data/agents.json` |
+
+---
+
+## Cron Jobs
+
+Cron jobs are scheduled tasks that run Claude on a schedule. Definitions live in `data/crons.json` (runtime-mutable). Each job tracks execution state and writes JSONL run logs to `data/cron-runs/`.
+
+### Architecture
+
+```
+Program code (src/)              User data (data/)
+┌───────────────────────┐       ┌──────────────────────────────┐
+│ scheduler/cron.ts     │       │ data/crons.json              │
+│   - addCron()         │◄──────│   { version: 1, jobs: [...] }│
+│   - executeCronJob()  │       │                              │
+│   - updateJobState()  │       │ data/cron-runs/              │
+│   - appendRunLog()    │       │   <job-id>.jsonl             │
+│   - reloadCrons()     │       │                              │
+│                       │       │ data/agents.json             │
+│ agents/store.ts       │◄──────│   { version: 1, agents: [] } │
+│   - getAgent()        │       └──────────────────────────────┘
+└───────────────────────┘
+```
+
+### CronJob fields
+
+| Field | Description |
+|-------|-------------|
+| `schedule` | Cron expression (e.g. `"0 9 * * *"`) |
+| `prompt` | Inline prompt text |
+| `promptPath` | Optional: load prompt from file instead |
+| `agentId` | Optional: reference an agent for persona/model/dir |
+| `model` | Optional: override model (takes priority over agent) |
+| `workingDir` | Optional: override working dir |
+| `timeoutMs` | Optional: override timeout |
+| `state` | Auto-managed: `lastRunAtMs`, `lastStatus`, `lastDurationMs`, `consecutiveErrors`, `lastError` |
+
+Resolution priority: CronJob field > Agent field > config default.
+
+### Run Logs
+
+Each execution is logged as a JSONL line in `data/cron-runs/<job-id>.jsonl`:
+
+```json
+{"ts":1709280000000,"jobId":"abc-123","status":"ok","durationMs":45000,"model":"claude-opus-4-20250514","outputSnippet":"..."}
+```
 
 ---
 
