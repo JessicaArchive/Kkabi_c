@@ -87,7 +87,7 @@ export function createHandler(channel: Channel) {
     // Build prompt and enqueue
     const prompt = buildPrompt(text, chatId);
     const workingDir = resolveWorkingDir(chatId, msg.channel);
-    const { promise, position } = enqueue(prompt, chatId, msg.channel, workingDir);
+    const { promise, position } = enqueue({ prompt, chatId, channel: msg.channel, workingDir });
 
     if (position > 1) {
       await channel.editMessage(chatId, pendingMsgId, `Waiting in queue... (position ${position})`);
