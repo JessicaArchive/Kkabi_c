@@ -15,6 +15,7 @@ import { enqueue } from "../claude/queue.js";
 
 const CRONS_FILE = resolve(process.cwd(), "data", "crons.json");
 const RUNS_DIR = resolve(process.cwd(), "data", "cron-runs");
+const ERROR_ALERT_THRESHOLD = 3;
 const activeTasks = new Map<string, cron.ScheduledTask>();
 
 // --- Send callback ---
@@ -188,12 +189,14 @@ async function executeCronJob(job: CronJob): Promise<void> {
     const durationMs = Date.now() - startMs;
     const isError = !!result.error;
 
+    const newConsecutiveErrors = isError ? (job.state?.consecutiveErrors ?? 0) + 1 : 0;
+
     // Update state
     updateJobState(job.id, {
       lastRunAtMs: startMs,
       lastStatus: isError ? "error" : "ok",
       lastDurationMs: durationMs,
-      consecutiveErrors: isError ? ((job.state?.consecutiveErrors ?? 0) + 1) : 0,
+      consecutiveErrors: newConsecutiveErrors,
       lastError: isError ? result.error : undefined,
     });
 
@@ -216,15 +219,25 @@ async function executeCronJob(job: CronJob): Promise<void> {
     if (sendCallback) {
       await sendCallback(job.channelType, job.chatId, text);
     }
+
+    // Alert on consecutive errors
+    if (newConsecutiveErrors === ERROR_ALERT_THRESHOLD && sendCallback) {
+      await sendCallback(
+        job.channelType,
+        job.chatId,
+        `[Cron Alert] "${job.name}" (${job.id.slice(0, 8)}) has failed ${ERROR_ALERT_THRESHOLD} times in a row. Last error: ${result.error ?? "unknown"}`,
+      );
+    }
   } catch (err) {
     const durationMs = Date.now() - startMs;
     const errorMsg = err instanceof Error ? err.message : String(err);
+    const newConsecutiveErrors = (job.state?.consecutiveErrors ?? 0) + 1;
 
     updateJobState(job.id, {
       lastRunAtMs: startMs,
       lastStatus: "error",
       lastDurationMs: durationMs,
-      consecutiveErrors: (job.state?.consecutiveErrors ?? 0) + 1,
+      consecutiveErrors: newConsecutiveErrors,
       lastError: errorMsg,
     });
 
@@ -238,6 +251,14 @@ async function executeCronJob(job: CronJob): Promise<void> {
     });
 
     console.error(`[Cron] Error executing job ${job.id}:`, err);
+
+    if (newConsecutiveErrors === ERROR_ALERT_THRESHOLD && sendCallback) {
+      await sendCallback(
+        job.channelType,
+        job.chatId,
+        `[Cron Alert] "${job.name}" (${job.id.slice(0, 8)}) has failed ${ERROR_ALERT_THRESHOLD} times in a row. Last error: ${errorMsg}`,
+      );
+    }
   }
 }
 
