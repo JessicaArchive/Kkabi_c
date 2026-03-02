@@ -66,6 +66,7 @@ export function addCron(
   prompt: string,
   channelType: ChannelType,
   chatId: string,
+  agentId?: string,
 ): CronJob {
   if (!cron.validate(schedule)) {
     throw new Error(`Invalid cron schedule: ${schedule}`);
@@ -82,6 +83,7 @@ export function addCron(
     enabled: true,
     createdAt: now,
     updatedAt: now,
+    ...(agentId ? { agentId } : {}),
   };
 
   const jobs = loadCronsRaw();
