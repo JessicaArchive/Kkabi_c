@@ -30,5 +30,8 @@
   },
   "scheduler": {
     "enabled": true
+  },
+  "agents": {
+    "_comment": "Agent definitions are stored in data/agents.json. Manage via !agent add/remove commands."
   }
 }
