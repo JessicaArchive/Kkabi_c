@@ -15,7 +15,7 @@ import {
   runCronNow,
   reloadCrons,
 } from "../scheduler/cron.js";
-import { loadAgents, getAgent, reloadAgents } from "../agents/store.js";
+import { loadAgents, getAgent, reloadAgents, saveAgent, removeAgent } from "../agents/store.js";
 
 let workingDir = process.env.HOME ?? process.cwd();
 
@@ -191,9 +191,15 @@ function cmdCron(args: string, chatId: string, channel: ChannelType): CommandRes
   switch (sub) {
     case "add": {
       const match = args.match(/add\s+"([^"]+)"\s+"([^"]+)"/);
-      if (!match) return { text: 'Usage: !cron add "<schedule>" "<prompt>"' };
-      const job = addCron(match[1], match[2], channel, chatId);
-      return { text: `Cron job added: ${job.id.slice(0, 8)} (${match[1]})` };
+      if (!match) return { text: 'Usage: !cron add "<schedule>" "<prompt>" [--agent <id>]' };
+      const rest = args.slice(match[0].length);
+      const agentId = rest.match(/--agent\s+(\S+)/)?.[1];
+      if (agentId && !getAgent(agentId)) {
+        return { text: `Agent "${agentId}" not found.` };
+      }
+      const job = addCron(match[1], match[2], channel, chatId, agentId);
+      const agentTag = agentId ? ` [agent: ${agentId}]` : "";
+      return { text: `Cron job added: ${job.id.slice(0, 8)} (${match[1]})${agentTag}` };
     }
     case "remove": {
       const id = parts[1];
@@ -288,12 +294,21 @@ function cmdAgent(args: string): CommandResult {
       const id = parts.slice(1).join(" ").trim();
       return cmdAgentShow(id);
     }
+    case "add":
+      return cmdAgentAdd(args.slice(4).trim());
+    case "remove": {
+      const id = parts[1]?.trim();
+      if (!id) return { text: "Usage: !agent remove <id>" };
+      return removeAgent(id)
+        ? { text: `Agent removed: ${id}` }
+        : { text: `Agent "${id}" not found.` };
+    }
     case "reload": {
       const agents = reloadAgents();
       return { text: `Agents reloaded. ${agents.length} agent(s) loaded.` };
     }
     default:
-      return { text: "Usage: !agent [show <id> | reload]" };
+      return { text: "Usage: !agent [show <id> | add | remove | reload]" };
   }
 }
 
@@ -323,6 +338,23 @@ function cmdAgentShow(id: string): CommandResult {
     lines.push(`  Persona: ${agent.persona.slice(0, 100)}${agent.persona.length > 100 ? "..." : ""}`);
   }
   return { text: lines.join("\n") };
+}
+
+function cmdAgentAdd(raw: string): CommandResult {
+  // Parse: <id> "<name>" [--model M] [--dir D] [--timeout N]
+  const match = raw.match(/^(\S+)\s+"([^"]+)"/);
+  if (!match) return { text: 'Usage: !agent add <id> "<name>" [--model M] [--dir D] [--timeout N]' };
+
+  const [, id, name] = match;
+  const rest = raw.slice(match[0].length);
+
+  const model = rest.match(/--model\s+(\S+)/)?.[1];
+  const dir = rest.match(/--dir\s+(\S+)/)?.[1]?.replace("~", process.env.HOME ?? "");
+  const timeoutRaw = rest.match(/--timeout\s+(\d+)/)?.[1];
+  const timeoutMs = timeoutRaw ? Number(timeoutRaw) * 1000 : undefined;
+
+  saveAgent({ id, name, model, workingDir: dir, timeoutMs });
+  return { text: `Agent added: ${id} ("${name}")` };
 }
 
 // --- Utilities ---
@@ -357,7 +389,7 @@ const HELP_TEXT = `Kkabi Commands
 !cancel            Cancel running task
 !running           Show running/queued tasks
 !cron              List cron jobs
-!cron add "<s>" "<p>" Add cron job
+!cron add "<s>" "<p>" [--agent <id>]  Add cron job
 !cron remove <id>  Remove cron job
 !cron toggle <id>  Enable/disable cron job
 !cron run <id>     Force run cron job
@@ -365,5 +397,7 @@ const HELP_TEXT = `Kkabi Commands
 !cron reload       Reload crons from file
 !agent             List agents
 !agent show <id>   Show agent details
+!agent add <id> "<name>" [--model M] [--dir D]  Add agent
+!agent remove <id> Remove agent
 !agent reload      Reload agents from file
 !help              Show this help`;
