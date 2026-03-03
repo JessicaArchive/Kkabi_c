@@ -5,6 +5,7 @@ import { SlackChannel } from "./channels/slack.js";
 import { GitHubChannel } from "./channels/github.js";
 import { createHandler } from "./core/handler.js";
 import { startAllCrons, stopAllCrons, setCronSendCallback } from "./scheduler/cron.js";
+import { setWorkflowSendCallback } from "./workflow/engine.js";
 import { cleanOldLogs } from "./memory/manager.js";
 import { cancelCurrent } from "./claude/runner.js";
 import type { Channel } from "./channels/base.js";
@@ -46,6 +47,14 @@ async function main(): Promise<void> {
 
   // Set up cron send callback
   setCronSendCallback(async (channelType: ChannelType, chatId: string, text: string) => {
+    const ch = channels.get(channelType);
+    if (ch) {
+      await ch.sendText(chatId, text);
+    }
+  });
+
+  // Set up workflow send callback
+  setWorkflowSendCallback(async (channelType: ChannelType, chatId: string, text: string) => {
     const ch = channels.get(channelType);
     if (ch) {
       await ch.sendText(chatId, text);

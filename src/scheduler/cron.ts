@@ -12,6 +12,7 @@ import type { CronJob, CronJobState, ChannelType } from "../types.js";
 import { getAgent } from "../agents/store.js";
 import { buildPrompt } from "../claude/context.js";
 import { enqueue } from "../claude/queue.js";
+import { executeWorkflow } from "../workflow/engine.js";
 
 const CRONS_FILE = resolve(process.cwd(), "data", "crons.json");
 const RUNS_DIR = resolve(process.cwd(), "data", "cron-runs");
@@ -68,6 +69,7 @@ export function addCron(
   channelType: ChannelType,
   chatId: string,
   agentId?: string,
+  workflowId?: string,
 ): CronJob {
   if (!cron.validate(schedule)) {
     throw new Error(`Invalid cron schedule: ${schedule}`);
@@ -85,6 +87,7 @@ export function addCron(
     createdAt: now,
     updatedAt: now,
     ...(agentId ? { agentId } : {}),
+    ...(workflowId ? { workflowId } : {}),
   };
 
   const jobs = loadCronsRaw();
@@ -156,6 +159,38 @@ function scheduleCron(job: CronJob): void {
 }
 
 async function executeCronJob(job: CronJob): Promise<void> {
+  // If this cron triggers a workflow, delegate to workflow engine
+  if (job.workflowId) {
+    const startMs = Date.now();
+    try {
+      await executeWorkflow(job.workflowId);
+      updateJobState(job.id, {
+        lastRunAtMs: startMs,
+        lastStatus: "ok",
+        lastDurationMs: Date.now() - startMs,
+        consecutiveErrors: 0,
+      });
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      const newConsecutiveErrors = (job.state?.consecutiveErrors ?? 0) + 1;
+      updateJobState(job.id, {
+        lastRunAtMs: startMs,
+        lastStatus: "error",
+        lastDurationMs: Date.now() - startMs,
+        consecutiveErrors: newConsecutiveErrors,
+        lastError: errorMsg,
+      });
+      if (newConsecutiveErrors === ERROR_ALERT_THRESHOLD && sendCallback) {
+        await sendCallback(
+          job.channelType,
+          job.chatId,
+          `[Cron Alert] Workflow "${job.workflowId}" has failed ${ERROR_ALERT_THRESHOLD} times. Error: ${errorMsg}`,
+        );
+      }
+    }
+    return;
+  }
+
   const startMs = Date.now();
   const agent = job.agentId ? getAgent(job.agentId) : undefined;
 
