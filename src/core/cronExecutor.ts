@@ -1,6 +1,8 @@
 import type { CronAction } from "./cronParser.js";
 import type { ChannelType, CronJob } from "../types.js";
 import { addCron, removeCron, listCrons } from "../scheduler/cron.js";
+import { executeWorkflow } from "../workflow/engine.js";
+import { getWorkflow } from "../workflow/store.js";
 
 export interface CronExecutionResult {
   success: boolean;
@@ -49,6 +51,19 @@ export function executeCronActions(
         } else {
           const lines = jobs.map(formatCronJob);
           results.push({ success: true, message: lines.join("\n") });
+        }
+        break;
+      }
+
+      case "workflow_run": {
+        const wf = getWorkflow(action.id);
+        if (!wf) {
+          results.push({ success: false, message: `Workflow not found: ${action.id}` });
+        } else {
+          executeWorkflow(action.id).catch((err) =>
+            console.error(`[Workflow] Tag-triggered run error (${action.id}):`, err),
+          );
+          results.push({ success: true, message: `Workflow "${wf.name}" started.` });
         }
         break;
       }

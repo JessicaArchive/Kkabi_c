@@ -3,6 +3,7 @@ import { readMemory } from "../memory/manager.js";
 import { loadPersona, getLang } from "../memory/persona.js";
 import { listCrons } from "../scheduler/cron.js";
 import { loadAgents } from "../agents/store.js";
+import { loadWorkflows } from "../workflow/store.js";
 
 export function buildPrompt(userMessage: string, chatId: string): string {
   const parts: string[] = [];
@@ -96,6 +97,8 @@ function buildCapabilitiesSection(chatId: string): string {
 
   // Rules
   lines.push("## Rules");
+  lines.push("- Cron jobs are for RECURRING tasks only (e.g. 'every day at 9am', 'every Monday'). Do NOT register a cron job for one-time requests.");
+  lines.push("- One-time delayed requests (e.g. 'tell me in 5 minutes', 'remind me once') cannot be scheduled — inform the user that only recurring schedules are supported.");
   lines.push("- When the user asks to schedule/register a recurring task, include the appropriate CRON_JOB tag.");
   lines.push("- When the user asks to cancel/remove/delete a scheduled task, include the CRON_REMOVE tag.");
   lines.push("- When the user asks to see/list scheduled tasks, include the CRON_LIST tag.");
@@ -116,6 +119,19 @@ function buildCapabilitiesSection(chatId: string): string {
     }
   }
   lines.push("");
+
+  // Available workflows
+  const workflows = loadWorkflows();
+  if (workflows.length > 0) {
+    lines.push("## Available Workflows");
+    lines.push("To trigger a workflow run, include this tag:");
+    lines.push('  <!--WORKFLOW_RUN:{"id":"<workflow id>"}-->');
+    for (const wf of workflows) {
+      const stepNames = wf.steps.map((s) => s.id).join(" → ");
+      lines.push(`- ${wf.id}: ${wf.name} (${stepNames})`);
+    }
+    lines.push("");
+  }
 
   // Current cron jobs for context
   const jobs = listCrons().filter((j) => j.chatId === chatId);

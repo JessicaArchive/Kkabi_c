@@ -202,15 +202,20 @@ function cmdCron(args: string, chatId: string, channel: ChannelType): CommandRes
   switch (sub) {
     case "add": {
       const match = args.match(/add\s+"([^"]+)"\s+"([^"]+)"/);
-      if (!match) return { text: 'Usage: !cron add "<schedule>" "<prompt>" [--agent <id>]' };
+      if (!match) return { text: 'Usage: !cron add "<schedule>" "<prompt>" [--agent <id>] [--workflow <id>]' };
       const rest = args.slice(match[0].length);
       const agentId = rest.match(/--agent\s+(\S+)/)?.[1];
+      const workflowId = rest.match(/--workflow\s+(\S+)/)?.[1];
       if (agentId && !getAgent(agentId)) {
         return { text: `Agent "${agentId}" not found.` };
       }
-      const job = addCron(match[1], match[2], channel, chatId, agentId);
-      const agentTag = agentId ? ` [agent: ${agentId}]` : "";
-      return { text: `Cron job added: ${job.id.slice(0, 8)} (${match[1]})${agentTag}` };
+      if (workflowId && !getWorkflow(workflowId)) {
+        return { text: `Workflow "${workflowId}" not found.` };
+      }
+      const job = addCron(match[1], match[2], channel, chatId, agentId, workflowId);
+      const tags = [agentId && `agent: ${agentId}`, workflowId && `workflow: ${workflowId}`].filter(Boolean);
+      const tagStr = tags.length > 0 ? ` [${tags.join(", ")}]` : "";
+      return { text: `Cron job added: ${job.id.slice(0, 8)} (${match[1]})${tagStr}` };
     }
     case "remove": {
       const id = parts[1];
