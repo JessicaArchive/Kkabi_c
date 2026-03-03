@@ -16,6 +16,15 @@ import {
   reloadCrons,
 } from "../scheduler/cron.js";
 import { loadAgents, getAgent, reloadAgents, saveAgent, removeAgent } from "../agents/store.js";
+import {
+  loadWorkflows,
+  getWorkflow,
+  saveWorkflow,
+  removeWorkflow,
+  toggleWorkflow,
+  reloadWorkflows,
+} from "../workflow/store.js";
+import { executeWorkflow } from "../workflow/engine.js";
 
 let workingDir = process.env.HOME ?? process.cwd();
 
@@ -62,6 +71,8 @@ export async function executeCommand(
       return cmdCron(args, chatId, channel);
     case "agent":
       return cmdAgent(args);
+    case "workflow":
+      return cmdWorkflow(args, chatId, channel);
     case "help":
       return { text: HELP_TEXT };
     default:
@@ -357,6 +368,141 @@ function cmdAgentAdd(raw: string): CommandResult {
   return { text: `Agent added: ${id} ("${name}")` };
 }
 
+// --- !workflow ---
+
+function cmdWorkflow(args: string, chatId: string, channel: ChannelType): CommandResult {
+  if (!args) {
+    const workflows = loadWorkflows();
+    if (workflows.length === 0) return { text: "No workflows configured." };
+    const lines = workflows.map((w) => {
+      const status = w.enabled ? "ON" : "OFF";
+      const lastStatus = w.state?.lastStatus ?? "-";
+      const stepCount = w.steps.length;
+      return `${status} [${w.id}] ${w.name} (${stepCount} steps) | ${lastStatus}`;
+    });
+    return { text: lines.join("\n") };
+  }
+
+  const parts = args.split(" ");
+  const sub = parts[0];
+
+  switch (sub) {
+    case "show": {
+      const id = parts[1];
+      if (!id) return { text: "Usage: !workflow show <id>" };
+      return cmdWorkflowShow(id);
+    }
+    case "run": {
+      const id = parts[1];
+      if (!id) return { text: "Usage: !workflow run <id>" };
+      const wf = getWorkflow(id);
+      if (!wf) return { text: `Workflow not found: ${id}` };
+      executeWorkflow(id).catch((err) =>
+        console.error(`[Workflow] Manual run error (${id}):`, err),
+      );
+      return { text: `Workflow "${wf.name}" started.` };
+    }
+    case "add": {
+      const match = args.match(/add\s+(\S+)\s+"([^"]+)"/);
+      if (!match) return { text: 'Usage: !workflow add <id> "<name>"' };
+      const [, id, name] = match;
+      if (getWorkflow(id)) return { text: `Workflow "${id}" already exists.` };
+      saveWorkflow({
+        id,
+        name,
+        enabled: true,
+        steps: [],
+        channelType: channel,
+        chatId,
+      });
+      return { text: `Workflow created: ${id}. Edit data/workflows.json to add steps.` };
+    }
+    case "remove": {
+      const id = parts[1];
+      if (!id) return { text: "Usage: !workflow remove <id>" };
+      return removeWorkflow(id)
+        ? { text: `Workflow removed: ${id}` }
+        : { text: `Workflow not found: ${id}` };
+    }
+    case "toggle": {
+      const id = parts[1];
+      if (!id) return { text: "Usage: !workflow toggle <id>" };
+      const toggled = toggleWorkflow(id);
+      return toggled
+        ? { text: `Workflow ${toggled.enabled ? "enabled" : "disabled"}: ${id}` }
+        : { text: `Workflow not found: ${id}` };
+    }
+    case "status": {
+      const id = parts[1];
+      return cmdWorkflowStatus(id);
+    }
+    case "reload": {
+      const workflows = reloadWorkflows();
+      return { text: `Workflows reloaded. ${workflows.length} workflow(s).` };
+    }
+    default:
+      return { text: "Usage: !workflow <show|run|add|remove|toggle|status|reload>" };
+  }
+}
+
+function cmdWorkflowShow(id: string): CommandResult {
+  const wf = getWorkflow(id);
+  if (!wf) return { text: `Workflow not found: ${id}` };
+
+  const lines = [
+    `Workflow: ${wf.name} (${wf.enabled ? "enabled" : "disabled"})`,
+    `  ID: ${wf.id}`,
+    `  Channel: ${wf.channelType} | ${wf.chatId}`,
+    `  Steps:`,
+  ];
+  for (const step of wf.steps) {
+    const deps = step.dependsOn?.length ? ` (after: ${step.dependsOn.join(", ")})` : "";
+    lines.push(`    ${step.id}: agent=${step.agentId}${deps}`);
+  }
+  if (wf.state?.lastStatus) {
+    lines.push(`  Last run: ${wf.state.lastStatus} (${new Date(wf.state.lastRunAtMs!).toISOString()})`);
+  }
+  return { text: lines.join("\n") };
+}
+
+function cmdWorkflowStatus(id?: string): CommandResult {
+  if (!id) {
+    const workflows = loadWorkflows();
+    if (workflows.length === 0) return { text: "No workflows configured." };
+    const lines: string[] = [];
+    for (const wf of workflows) {
+      const status = wf.enabled ? "ON" : "OFF";
+      const lastRun = wf.state?.lastRunAtMs ? new Date(wf.state.lastRunAtMs).toISOString() : "never";
+      const duration = wf.state?.lastDurationMs != null ? `${(wf.state.lastDurationMs / 1000).toFixed(1)}s` : "-";
+      const lastStatus = wf.state?.lastStatus ?? "-";
+      lines.push(`${status} [${wf.id}] ${wf.name}`);
+      lines.push(`  ${lastStatus} | last: ${lastRun} | ${duration}`);
+      if (wf.state?.lastError) {
+        lines.push(`  error: ${wf.state.lastError.slice(0, 100)}`);
+      }
+    }
+    return { text: lines.join("\n") };
+  }
+
+  const wf = getWorkflow(id);
+  if (!wf) return { text: `Workflow not found: ${id}` };
+
+  const lastRun = wf.state?.lastRunAtMs ? new Date(wf.state.lastRunAtMs).toISOString() : "never";
+  const duration = wf.state?.lastDurationMs != null ? `${(wf.state.lastDurationMs / 1000).toFixed(1)}s` : "-";
+
+  const lines = [
+    `Workflow: ${wf.name} (${wf.enabled ? "enabled" : "disabled"})`,
+    `  ID: ${wf.id}`,
+    `  Status: ${wf.state?.lastStatus ?? "-"}`,
+    `  Last run: ${lastRun}`,
+    `  Duration: ${duration}`,
+    `  Completed steps: ${wf.state?.completedSteps?.join(", ") ?? "-"}`,
+  ];
+  if (wf.state?.failedStep) lines.push(`  Failed step: ${wf.state.failedStep}`);
+  if (wf.state?.lastError) lines.push(`  Last error: ${wf.state.lastError}`);
+  return { text: lines.join("\n") };
+}
+
 // --- Utilities ---
 
 function formatSystemInfo(): string {
@@ -400,4 +546,12 @@ const HELP_TEXT = `Kkabi Commands
 !agent add <id> "<name>" [--model M] [--dir D]  Add agent
 !agent remove <id> Remove agent
 !agent reload      Reload agents from file
+!workflow           List workflows
+!workflow show <id> Show workflow details
+!workflow run <id>  Run a workflow
+!workflow add <id> "<name>"  Create workflow
+!workflow remove <id>  Remove workflow
+!workflow toggle <id>  Enable/disable workflow
+!workflow status [id]  Show workflow status
+!workflow reload    Reload workflows from file
 !help              Show this help`;
