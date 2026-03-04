@@ -58,6 +58,34 @@ export interface Agent {
   timeoutMs?: number;
 }
 
+export interface WorkflowStep {
+  id: string;
+  agentId: string;
+  prompt: string;
+  promptPath?: string;
+  dependsOn?: string[];
+  timeoutMs?: number;
+}
+
+export interface WorkflowRunState {
+  lastRunAtMs?: number;
+  lastStatus?: "ok" | "error" | "partial";
+  lastDurationMs?: number;
+  completedSteps?: string[];
+  failedStep?: string;
+  lastError?: string;
+}
+
+export interface Workflow {
+  id: string;
+  name: string;
+  enabled: boolean;
+  steps: WorkflowStep[];
+  channelType: ChannelType;
+  chatId: string;
+  state?: WorkflowRunState;
+}
+
 export interface CronJobState {
   lastRunAtMs?: number;
   lastStatus?: "ok" | "error";
@@ -80,6 +108,7 @@ export interface CronJob {
   prompt: string;
   promptPath?: string;
   agentId?: string;
+  workflowId?: string;
   model?: string;
   workingDir?: string;
   timeoutMs?: number;
