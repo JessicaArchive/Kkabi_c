@@ -1,7 +1,8 @@
 export type CronAction =
   | { type: "add"; schedule: string; prompt: string; agentId?: string }
   | { type: "remove"; id: string }
-  | { type: "list" };
+  | { type: "list" }
+  | { type: "workflow_run"; id: string };
 
 export interface ParseResult {
   actions: CronAction[];
@@ -11,6 +12,7 @@ export interface ParseResult {
 const CRON_JOB_RE = /<!--CRON_JOB:(.*?)-->/g;
 const CRON_REMOVE_RE = /<!--CRON_REMOVE:(.*?)-->/g;
 const CRON_LIST_RE = /<!--CRON_LIST-->/g;
+const WORKFLOW_RUN_RE = /<!--WORKFLOW_RUN:(.*?)-->/g;
 
 export function parseCronTags(response: string): ParseResult {
   const actions: CronAction[] = [];
@@ -44,11 +46,24 @@ export function parseCronTags(response: string): ParseResult {
     actions.push({ type: "list" });
   }
 
+  // Parse workflow run actions
+  for (const match of response.matchAll(WORKFLOW_RUN_RE)) {
+    try {
+      const payload = JSON.parse(match[1]) as { id: string };
+      if (payload.id) {
+        actions.push({ type: "workflow_run", id: payload.id });
+      }
+    } catch {
+      // Skip malformed tags
+    }
+  }
+
   // Strip all tags and clean up extra blank lines
   let cleaned = response
     .replace(CRON_JOB_RE, "")
     .replace(CRON_REMOVE_RE, "")
     .replace(CRON_LIST_RE, "")
+    .replace(WORKFLOW_RUN_RE, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
