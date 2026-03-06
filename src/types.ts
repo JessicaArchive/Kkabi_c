@@ -1,4 +1,4 @@
-export type ChannelType = "slack" | "github" | "gchat";
+export type ChannelType = "slack" | "github" | "gchat" | "local";
 
 export interface IncomingMessage {
   id: string;
@@ -45,6 +45,7 @@ export interface QueueItem {
   workingDir?: string;
   model?: string;
   timeoutMs?: number;
+  logFile?: string;
   resolve: (result: ClaudeResult) => void;
   reject: (error: Error) => void;
 }
@@ -56,34 +57,6 @@ export interface Agent {
   persona?: string;
   workingDir?: string;
   timeoutMs?: number;
-}
-
-export interface WorkflowStep {
-  id: string;
-  agentId: string;
-  prompt: string;
-  promptPath?: string;
-  dependsOn?: string[];
-  timeoutMs?: number;
-}
-
-export interface WorkflowRunState {
-  lastRunAtMs?: number;
-  lastStatus?: "ok" | "error" | "partial";
-  lastDurationMs?: number;
-  completedSteps?: string[];
-  failedStep?: string;
-  lastError?: string;
-}
-
-export interface Workflow {
-  id: string;
-  name: string;
-  enabled: boolean;
-  steps: WorkflowStep[];
-  channelType: ChannelType;
-  chatId: string;
-  state?: WorkflowRunState;
 }
 
 export interface CronJobState {
@@ -108,7 +81,7 @@ export interface CronJob {
   prompt: string;
   promptPath?: string;
   agentId?: string;
-  workflowId?: string;
+
   model?: string;
   workingDir?: string;
   timeoutMs?: number;
