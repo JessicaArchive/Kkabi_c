@@ -20,16 +20,17 @@ export interface EnqueueOptions {
   workingDir?: string;
   model?: string;
   timeoutMs?: number;
+  logFile?: string;
 }
 
 export function enqueue(
   options: EnqueueOptions,
 ): { promise: Promise<ClaudeResult>; position: number; id: string } {
-  const { prompt, chatId, channel, workingDir, model, timeoutMs } = options;
+  const { prompt, chatId, channel, workingDir, model, timeoutMs, logFile } = options;
   const id = randomUUID();
 
   const promise = new Promise<ClaudeResult>((resolve, reject) => {
-    queue.push({ id, prompt, chatId, channel, workingDir, model, timeoutMs, resolve, reject });
+    queue.push({ id, prompt, chatId, channel, workingDir, model, timeoutMs, logFile, resolve, reject });
   });
 
   const position = queue.length;
@@ -65,6 +66,7 @@ async function processNext(): Promise<void> {
       workingDir: item.workingDir,
       model: item.model,
       timeoutMs: item.timeoutMs,
+      logFile: item.logFile,
     });
     item.resolve(result);
   } catch (err) {

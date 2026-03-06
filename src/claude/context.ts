@@ -3,7 +3,6 @@ import { readMemory } from "../memory/manager.js";
 import { loadPersona, getLang } from "../memory/persona.js";
 import { listCrons } from "../scheduler/cron.js";
 import { loadAgents } from "../agents/store.js";
-import { loadWorkflows } from "../workflow/store.js";
 
 export function buildPrompt(userMessage: string, chatId: string): string {
   const parts: string[] = [];
@@ -119,19 +118,6 @@ function buildCapabilitiesSection(chatId: string): string {
     }
   }
   lines.push("");
-
-  // Available workflows
-  const workflows = loadWorkflows();
-  if (workflows.length > 0) {
-    lines.push("## Available Workflows");
-    lines.push("To trigger a workflow run, include this tag:");
-    lines.push('  <!--WORKFLOW_RUN:{"id":"<workflow id>"}-->');
-    for (const wf of workflows) {
-      const stepNames = wf.steps.map((s) => s.id).join(" → ");
-      lines.push(`- ${wf.id}: ${wf.name} (${stepNames})`);
-    }
-    lines.push("");
-  }
 
   // Current cron jobs for context
   const jobs = listCrons().filter((j) => j.chatId === chatId);
