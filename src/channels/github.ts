@@ -64,7 +64,7 @@ export class GitHubChannel implements Channel {
     const sinceDate = new Date(new Date(this.lastChecked).getTime() - 2000);
     const since = sinceDate.toISOString();
     this.lastChecked = new Date().toISOString();
-    console.log(`[GitHub] Polling since ${since}`);
+    process.stdout.write(`\r[GitHub] Polling... (${since.slice(11, 19)})`);
 
     for (const repoEntry of this.config.repositories) {
       const repo = getRepoName(repoEntry);
@@ -93,7 +93,9 @@ export class GitHubChannel implements Channel {
     }
 
     const { data: issues } = await this.octokit.rest.issues.listForRepo(params);
-    console.log(`[GitHub] Found ${issues.length} issues in ${owner}/${repo}`);
+    if (issues.length > 0) {
+      console.log(`[GitHub] Found ${issues.length} issues in ${owner}/${repo}`);
+    }
 
     for (const issue of issues) {
       // Skip pull requests (GitHub API returns PRs in issues endpoint)
