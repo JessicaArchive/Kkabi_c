@@ -17,7 +17,9 @@ function navigate(page) {
 }
 
 function refresh() {
-  if (currentPage === 'crons') fetchCrons();
+  if (currentPage === 'chat') fetchChatSessions();
+  else if (currentPage === 'crons') fetchCrons();
+  else if (currentPage === 'queue') fetchQueue();
   else if (currentPage === 'runs') fetchRuns();
   else if (currentPage === 'branches') fetchBranches();
   else if (currentPage === 'log') fetchLog();
@@ -198,6 +200,7 @@ async function fetchRuns() {
     const tbody = document.getElementById('runs-body');
     tbody.innerHTML = runs.map(r => `
       <tr>
+        <td><span class="badge badge-source-${r.source || 'cron'}">${r.source === 'queue' ? 'Queue' : 'Cron'}</span></td>
         <td class="clickable" onclick="showLog('${esc(r.jobId)}', ${r.ts})">${esc(r.jobName || r.jobId)}</td>
         <td class="clickable" onclick="showLog('${esc(r.jobId)}', ${r.ts})">${formatTime(r.ts)}</td>
         <td class="clickable" onclick="showLog('${esc(r.jobId)}', ${r.ts})">${r.status === 'running' ? formatDuration(r.durationMs) + '...' : r.durationMs ? formatDuration(r.durationMs) : '-'}</td>
@@ -339,6 +342,355 @@ async function stopDevServer() {
   const project = document.getElementById('project-select').value;
   await fetch(`/api/devserver/${project}/stop`, { method: 'POST' });
   fetchDevServer();
+}
+
+// Chat
+let chatWs = null;
+let currentChatSession = null;
+let chatStreaming = false;
+
+async function fetchChatSessions() {
+  try {
+    const res = await fetch('/api/chat/sessions');
+    const sessions = await res.json();
+    const list = document.getElementById('chat-sessions-list');
+    list.innerHTML = sessions.map(s => `
+      <div class="chat-session-item ${currentChatSession?.id === s.id ? 'active' : ''}"
+           onclick="resumeChatSession('${esc(s.id)}')">
+        <div class="session-name">${esc(s.name)}</div>
+        <div class="session-meta">
+          <span class="session-time">${formatTime(s.updatedAt)}</span>
+          <button class="btn-icon-sm" onclick="event.stopPropagation();deleteChatSession('${esc(s.id)}')" title="Delete">&times;</button>
+        </div>
+      </div>
+    `).join('') || '<div class="chat-empty">No sessions</div>';
+  } catch (err) {
+    console.error('Failed to fetch chat sessions:', err);
+  }
+}
+
+function connectChatWs() {
+  if (chatWs && chatWs.readyState === WebSocket.OPEN) return;
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  chatWs = new WebSocket(`${protocol}//${location.host}/ws/chat`);
+
+  chatWs.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    handleChatEvent(msg);
+  };
+
+  chatWs.onclose = () => {
+    chatWs = null;
+  };
+}
+
+function handleChatEvent(msg) {
+  switch (msg.type) {
+    case 'session-created':
+    case 'session-resumed':
+      currentChatSession = msg.session;
+      document.getElementById('chat-session-name').textContent = msg.session.name;
+      document.getElementById('chat-input-area').style.display = 'flex';
+      document.getElementById('chat-add-queue-btn').style.display = '';
+      renderChatMessages(msg.session.messages);
+      fetchChatSessions();
+      break;
+
+    case 'claude-event':
+      handleClaudeStreamEvent(msg.event);
+      break;
+
+    case 'claude-text':
+      appendToCurrentAssistantMsg(msg.text);
+      break;
+
+    case 'claude-done':
+      chatStreaming = false;
+      const streamingEl = document.querySelector('.chat-msg.streaming');
+      if (streamingEl) streamingEl.classList.remove('streaming');
+      document.getElementById('chat-stop-btn').style.display = 'none';
+      document.getElementById('chat-input').disabled = false;
+      fetchChatSessions();
+      break;
+
+    case 'stopped':
+      chatStreaming = false;
+      const stoppedEl = document.querySelector('.chat-msg.streaming');
+      if (stoppedEl) stoppedEl.classList.remove('streaming');
+      document.getElementById('chat-stop-btn').style.display = 'none';
+      document.getElementById('chat-input').disabled = false;
+      break;
+
+    case 'error':
+      alert(msg.error);
+      break;
+  }
+}
+
+function handleClaudeStreamEvent(event) {
+  // Collect text from assistant messages
+  if (event.type === 'assistant' && event.message?.content) {
+    for (const block of event.message.content) {
+      if (block.type === 'text') {
+        appendToCurrentAssistantMsg(block.text);
+      }
+    }
+  }
+  // Content block delta (streaming chunks)
+  if (event.type === 'content_block_delta' && event.delta?.text) {
+    appendToCurrentAssistantMsg(event.delta.text);
+  }
+}
+
+function appendToCurrentAssistantMsg(text) {
+  const container = document.getElementById('chat-messages');
+  let msgEl = container.querySelector('.chat-msg.assistant.streaming');
+  if (!msgEl) {
+    msgEl = document.createElement('div');
+    msgEl.className = 'chat-msg assistant streaming';
+    container.appendChild(msgEl);
+  }
+  msgEl.textContent += text;
+  container.scrollTop = container.scrollHeight;
+}
+
+function renderChatMessages(messages) {
+  const container = document.getElementById('chat-messages');
+  container.innerHTML = messages.map(m => `
+    <div class="chat-msg ${m.role}">${esc(m.text)}</div>
+  `).join('') || '<div class="chat-empty">Start the conversation</div>';
+  container.scrollTop = container.scrollHeight;
+}
+
+function sendChatMessage() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text || !chatWs || chatStreaming) return;
+
+  const container = document.getElementById('chat-messages');
+  const emptyEl = container.querySelector('.chat-empty');
+  if (emptyEl) emptyEl.remove();
+
+  const msgEl = document.createElement('div');
+  msgEl.className = 'chat-msg user';
+  msgEl.textContent = text;
+  container.appendChild(msgEl);
+
+  chatStreaming = true;
+  input.value = '';
+  input.disabled = true;
+  document.getElementById('chat-stop-btn').style.display = '';
+
+  chatWs.send(JSON.stringify({ type: 'send-message', text }));
+  container.scrollTop = container.scrollHeight;
+}
+
+function stopChat() {
+  if (chatWs) {
+    chatWs.send(JSON.stringify({ type: 'stop' }));
+  }
+}
+
+function openNewChatModal() {
+  document.getElementById('new-chat-name').value = '';
+  fetch('/api/projects/paths').then(r => r.json()).then(projects => {
+    const select = document.getElementById('new-chat-project');
+    select.innerHTML = '<option value="">Default (Kkabi_c)</option>' +
+      Object.entries(projects).map(([name, path]) =>
+        `<option value="${esc(path)}">${esc(name)}</option>`
+      ).join('');
+  });
+  document.getElementById('new-chat-modal').style.display = 'flex';
+}
+
+function closeNewChatModal() {
+  document.getElementById('new-chat-modal').style.display = 'none';
+}
+
+function createChatSession() {
+  connectChatWs();
+  const name = document.getElementById('new-chat-name').value.trim() || undefined;
+  const workingDir = document.getElementById('new-chat-project').value || undefined;
+
+  const send = () => {
+    chatWs.send(JSON.stringify({ type: 'new-session', name, workingDir }));
+    closeNewChatModal();
+  };
+
+  if (chatWs.readyState === WebSocket.OPEN) send();
+  else chatWs.onopen = send;
+}
+
+function resumeChatSession(id) {
+  connectChatWs();
+  const send = () => {
+    chatWs.send(JSON.stringify({ type: 'resume-session', sessionId: id }));
+  };
+  if (chatWs.readyState === WebSocket.OPEN) send();
+  else chatWs.onopen = send;
+}
+
+async function deleteChatSession(id) {
+  if (!confirm('Delete this chat session?')) return;
+  await fetch(`/api/chat/sessions/${id}`, { method: 'DELETE' });
+  if (currentChatSession?.id === id) {
+    currentChatSession = null;
+    document.getElementById('chat-session-name').textContent = 'Select or start a session';
+    document.getElementById('chat-messages').innerHTML = '<div class="chat-empty">Start a new chat session</div>';
+    document.getElementById('chat-input-area').style.display = 'none';
+    document.getElementById('chat-add-queue-btn').style.display = 'none';
+  }
+  fetchChatSessions();
+}
+
+function addChatToQueue() {
+  if (!currentChatSession) return;
+  const lastUserMsg = [...currentChatSession.messages].reverse().find(m => m.role === 'user');
+  document.getElementById('add-queue-prompt').value = lastUserMsg?.text || '';
+  document.getElementById('add-queue-name').value = currentChatSession.name || '';
+  openAddQueueModal();
+}
+
+// Queue
+async function fetchQueue() {
+  try {
+    const [queueRes, statusRes] = await Promise.all([
+      fetch('/api/queue'),
+      fetch('/api/queue/status')
+    ]);
+    const tasks = await queueRes.json();
+    const { running } = await statusRes.json();
+
+    // Update start/stop buttons
+    document.getElementById('queue-start-btn').style.display = running ? 'none' : '';
+    document.getElementById('queue-stop-btn').style.display = running ? '' : 'none';
+    document.getElementById('queue-status').innerHTML = running
+      ? '<span class="badge badge-running">Queue Running</span>'
+      : '';
+
+    const tbody = document.getElementById('queue-body');
+    tbody.innerHTML = tasks.map((t, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td><span class="job-name clickable" onclick='showQueueDetail(${JSON.stringify(t).replace(/'/g, "&#39;")})'>${esc(t.name)}</span></td>
+        <td><span class="badge badge-${t.status === 'done' ? 'ok' : t.status}">${t.status === 'done' ? 'Done' : t.status === 'error' ? 'Failed' : t.status === 'running' ? 'Running' : 'Pending'}</span></td>
+        <td>
+          ${t.status === 'pending' ? `<button class="btn btn-primary btn-sm" onclick="runQueueTask('${esc(t.id)}')">Run</button>` : ''}
+          <button class="btn btn-danger btn-sm" onclick="deleteQueueTask('${esc(t.id)}')">Delete</button>
+        </td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    console.error('Failed to fetch queue:', err);
+  }
+}
+
+async function runQueueTask(id) {
+  await fetch(`/api/queue/${id}/run`, { method: 'POST' });
+  fetchQueue();
+}
+
+async function deleteQueueTask(id) {
+  if (!confirm('Delete this task?')) return;
+  await fetch(`/api/queue/${id}`, { method: 'DELETE' });
+  fetchQueue();
+}
+
+async function startQueue() {
+  await fetch('/api/queue/start', { method: 'POST' });
+  fetchQueue();
+}
+
+async function stopQueue() {
+  await fetch('/api/queue/stop', { method: 'POST' });
+  fetchQueue();
+}
+
+function showQueueDetail(task) {
+  document.getElementById('queue-detail-title').textContent = task.name || task.id;
+  document.getElementById('queue-detail-content').innerHTML = `
+    <div class="detail-label">ID</div>
+    <div class="detail-value"><code>${esc(task.id)}</code></div>
+    <div class="detail-label">Prompt</div>
+    <div class="detail-value"><pre>${esc(task.prompt)}</pre></div>
+    <div class="detail-label">Status</div>
+    <div class="detail-value">${esc(task.status)}</div>
+    <div class="detail-label">Channel</div>
+    <div class="detail-value">${esc(task.channelType || '-')}</div>
+    <div class="detail-label">Chat ID</div>
+    <div class="detail-value">${esc(task.chatId || '-')}</div>
+    <div class="detail-label">Working Dir</div>
+    <div class="detail-value">${esc(task.workingDir || '-')}</div>
+    <div class="detail-label">Created</div>
+    <div class="detail-value">${task.createdAt ? formatTime(task.createdAt) : '-'}</div>
+  `;
+  document.getElementById('queue-detail-modal').style.display = 'flex';
+}
+
+function closeQueueDetailModal() {
+  document.getElementById('queue-detail-modal').style.display = 'none';
+}
+
+function openAddQueueModal() {
+  document.getElementById('add-queue-name').value = '';
+  document.getElementById('add-queue-prompt').value = '';
+  document.getElementById('add-queue-workdir').value = '';
+  document.getElementById('add-queue-channel').value = 'local';
+  document.getElementById('add-queue-chatid').value = '';
+  document.getElementById('add-queue-modal').style.display = 'flex';
+  loadPromptFileOptions();
+}
+
+async function loadPromptFile() {
+  const filename = document.getElementById('add-queue-promptfile').value;
+  if (!filename) return;
+  const res = await fetch(`/api/prompts/${filename}`);
+  if (res.ok) {
+    document.getElementById('add-queue-prompt').value = await res.text();
+  }
+}
+
+async function loadPromptFileOptions() {
+  try {
+    const res = await fetch('/api/prompts');
+    const files = await res.json();
+    const select = document.getElementById('add-queue-promptfile');
+    if (select) {
+      select.innerHTML = '<option value="">-- Select prompt file --</option>' +
+        files.map(f => `<option value="${esc(f)}">${esc(f)}</option>`).join('');
+    }
+  } catch {}
+}
+
+function closeAddQueueModal() {
+  document.getElementById('add-queue-modal').style.display = 'none';
+}
+
+async function addQueueTask() {
+  const name = document.getElementById('add-queue-name').value.trim();
+  const prompt = document.getElementById('add-queue-prompt').value.trim();
+  const workingDir = document.getElementById('add-queue-workdir').value.trim();
+  const channelType = document.getElementById('add-queue-channel').value;
+  const chatId = document.getElementById('add-queue-chatid').value.trim();
+
+  if (!prompt) {
+    alert('Prompt is required.');
+    return;
+  }
+
+  const res = await fetch('/api/queue', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, prompt, workingDir: workingDir || undefined, channelType, chatId })
+  });
+
+  if (res.ok) {
+    closeAddQueueModal();
+    fetchQueue();
+  } else {
+    const data = await res.json();
+    alert(data.error || 'Failed to create task');
+  }
 }
 
 // Cron expression to human-readable
