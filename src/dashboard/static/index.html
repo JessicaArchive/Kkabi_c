@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kkabi Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <span class="brand-icon">K</span>
+      <span class="brand-text">Kkabi</span>
+    </div>
+    <nav>
+      <a class="nav-link" data-page="chat" onclick="navigate('chat')">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2.5 1A1.5 1.5 0 0 0 1 2.5v9A1.5 1.5 0 0 0 2.5 13H5.3l2.4 1.8a.5.5 0 0 0 .6 0l2.4-1.8h2.8a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 13.5 1h-11zM2.5 2h11a.5.5 0 0 1 .5.5v9a.5.5 0 0 1-.5.5h-3a.5.5 0 0 0-.3.1L8 13.7l-2.2-1.6a.5.5 0 0 0-.3-.1h-3a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5z"/></svg>
+        Chat
+      </a>
+      <a class="nav-link active" data-page="crons" onclick="navigate('crons')">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zm0 14.5a6.5 6.5 0 1 1 0-13 6.5 6.5 0 0 1 0 13zM7.25 3v5.25l3.5 2.1.75-1.23-2.75-1.65V3h-1.5z"/></svg>
+        Cron Jobs
+      </a>
+      <a class="nav-link" data-page="queue" onclick="navigate('queue')">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v2H2V2zm0 5h12v2H2V7zm0 5h12v2H2v-2z"/></svg>
+        Queue
+      </a>
+      <a class="nav-link" data-page="runs" onclick="navigate('runs')">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.5A2.5 2.5 0 0 1 3.5 0h8.75a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0V1.5h-2v1.875c0 .28-.226.5-.504.5H5.504a.504.504 0 0 1-.504-.5V1.5H3.5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V7.25a.75.75 0 0 1 1.5 0v7.25a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 1 14.5V2.5z"/></svg>
+        Runs
+      </a>
+      <a class="nav-link" data-page="branches" onclick="navigate('branches')">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25z"/></svg>
+        Branches
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="status-dot"></div>
+      <span>System Active</span>
+    </div>
+  </aside>
+
+  <main class="content">
+    <!-- Chat Page -->
+    <div id="chat-page" class="page">
+      <div class="chat-layout">
+        <div class="chat-sidebar">
+          <div class="chat-sidebar-header">
+            <h3>Sessions</h3>
+            <button class="btn btn-primary btn-sm" onclick="openNewChatModal()">New</button>
+          </div>
+          <div id="chat-sessions-list" class="chat-sessions-list"></div>
+        </div>
+        <div class="chat-main">
+          <div id="chat-header" class="chat-header">
+            <span id="chat-session-name">Select or start a session</span>
+            <div class="chat-header-actions">
+              <button class="btn btn-sm" onclick="addChatToQueue()" title="Add to Queue" style="display:none" id="chat-add-queue-btn">Add to Queue</button>
+            </div>
+          </div>
+          <div id="chat-messages" class="chat-messages">
+            <div class="chat-empty">Start a new chat session</div>
+          </div>
+          <div id="chat-input-area" class="chat-input-area" style="display:none">
+            <textarea id="chat-input" placeholder="Type a message..." rows="2" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMessage()}"></textarea>
+            <button class="btn btn-primary" onclick="sendChatMessage()">Send</button>
+            <button class="btn btn-danger" onclick="stopChat()" id="chat-stop-btn" style="display:none">Stop</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Crons Page -->
+    <div id="crons-page" class="page active">
+      <div class="page-header">
+        <div>
+          <h1>Cron Jobs</h1>
+          <p class="page-desc">Manage scheduled tasks</p>
+        </div>
+        <button class="btn btn-primary" onclick="openAddCronModal()">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M7.25 0v7.25H0v1.5h7.25V16h1.5V8.75H16v-1.5H8.75V0h-1.5z"/></svg>
+          Add Cron
+        </button>
+      </div>
+      <div class="card">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Schedule</th>
+              <th>Enabled</th>
+              <th class="th-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="crons-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Queue Page -->
+    <div id="queue-page" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Queue</h1>
+          <p class="page-desc">Task queue — run on demand or sequentially</p>
+        </div>
+        <div class="page-header-actions">
+          <span id="queue-status" class="queue-status"></span>
+          <button class="btn btn-primary" onclick="openAddQueueModal()">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M7.25 0v7.25H0v1.5h7.25V16h1.5V8.75H16v-1.5H8.75V0h-1.5z"/></svg>
+            Add Task
+          </button>
+        </div>
+      </div>
+      <div class="queue-controls">
+        <button id="queue-start-btn" class="btn btn-primary btn-sm" onclick="startQueue()">Start Queue</button>
+        <button id="queue-stop-btn" class="btn btn-danger btn-sm" onclick="stopQueue()" style="display:none">Stop Queue</button>
+      </div>
+      <div class="card">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Name</th>
+              <th>Status</th>
+              <th class="th-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="queue-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Runs Page -->
+    <div id="runs-page" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Runs</h1>
+          <p class="page-desc">Execution history</p>
+        </div>
+      </div>
+      <div class="card">
+        <table>
+          <thead>
+            <tr>
+              <th>Source</th>
+              <th>Job</th>
+              <th>Start Time</th>
+              <th>Duration</th>
+              <th>Status</th>
+              <th class="th-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="runs-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Branches Page -->
+    <div id="branches-page" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Branches</h1>
+          <p class="page-desc">Git branch management</p>
+        </div>
+        <select id="project-select" onchange="fetchBranches()"></select>
+      </div>
+      <div class="card">
+        <div class="branches-toolbar">
+        <div id="branches-current" class="branches-current"></div>
+        <div id="devserver-controls" class="devserver-controls"></div>
+      </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Branch</th>
+              <th class="th-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="branches-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Log Page -->
+    <div id="log-page" class="page">
+      <div class="page-header">
+        <div>
+          <button class="btn btn-ghost" onclick="navigate('runs')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M7.78 12.53a.75.75 0 0 1-1.06 0L2.47 8.28a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 1.06L4.81 7h8.44a.75.75 0 0 1 0 1.5H4.81l2.97 2.97a.75.75 0 0 1 0 1.06z"/></svg>
+            Back to Runs
+          </button>
+        </div>
+      </div>
+      <div id="log-meta" class="log-meta"></div>
+      <div class="card log-card">
+        <pre id="log-content" class="log-content">Loading...</pre>
+      </div>
+    </div>
+  </main>
+
+  <!-- Schedule Edit Modal -->
+  <div id="schedule-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeScheduleModal()">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Edit Schedule</h2>
+        <button class="modal-close" onclick="closeScheduleModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Preset</label>
+          <select id="schedule-preset" onchange="applyPreset()">
+            <option value="">-- Select preset --</option>
+            <option value="0 * * * *">Every hour (at :00)</option>
+            <option value="*/30 * * * *">Every 30 minutes</option>
+            <option value="*/15 * * * *">Every 15 minutes</option>
+            <option value="0 */2 * * *">Every 2 hours</option>
+            <option value="0 */3 * * *">Every 3 hours</option>
+            <option value="0 9 * * *">Daily at 9 AM</option>
+            <option value="0 9 * * 1-5">Weekdays at 9 AM</option>
+            <option value="0 9,13,17 * * *">3x daily (9, 13, 17)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>One-time schedule</label>
+          <input type="datetime-local" id="schedule-onetime" onchange="applyOneTime()">
+        </div>
+        <div class="form-group">
+          <label>Cron expression</label>
+          <input type="text" id="schedule-cron" placeholder="0 * * * *">
+          <span class="form-hint">min hour day month weekday</span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeScheduleModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveSchedule()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cron Detail Modal -->
+  <div id="detail-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeDetailModal()">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="detail-title">Cron Detail</h2>
+        <button class="modal-close" onclick="closeDetailModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="detail-grid" id="detail-content"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeDetailModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Cron Modal -->
+  <div id="add-cron-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeAddCronModal()">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Add Cron Job</h2>
+        <button class="modal-close" onclick="closeAddCronModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Prompt</label>
+          <textarea id="add-cron-prompt" rows="3" placeholder="e.g. work_dev 진행해줘."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Schedule preset</label>
+          <select id="add-cron-preset" onchange="applyAddPreset()">
+            <option value="">-- Select preset --</option>
+            <option value="0 * * * *">Every hour (at :00)</option>
+            <option value="*/30 * * * *">Every 30 minutes</option>
+            <option value="0 */2 * * *">Every 2 hours</option>
+            <option value="0 9 * * *">Daily at 9 AM</option>
+            <option value="0 9 * * 1-5">Weekdays at 9 AM</option>
+            <option value="0 9,13,17 * * *">3x daily (9, 13, 17)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Cron expression</label>
+          <input type="text" id="add-cron-schedule" placeholder="0 * * * *">
+          <span class="form-hint">min hour day month weekday</span>
+        </div>
+        <div class="form-group">
+          <label>Channel</label>
+          <select id="add-cron-channel">
+            <option value="local">Local</option>
+            <option value="slack">Slack</option>
+            <option value="github">GitHub</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Chat ID</label>
+          <input type="text" id="add-cron-chatid" placeholder="e.g. kyjs0/test2#1">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeAddCronModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="addCron()">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New Chat Modal -->
+  <div id="new-chat-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeNewChatModal()">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>New Chat Session</h2>
+        <button class="modal-close" onclick="closeNewChatModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Session Name</label>
+          <input type="text" id="new-chat-name" placeholder="e.g. Fix login bug">
+        </div>
+        <div class="form-group">
+          <label>Project</label>
+          <select id="new-chat-project">
+            <option value="">Default (Kkabi_c)</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeNewChatModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="createChatSession()">Start</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Queue Task Modal -->
+  <div id="add-queue-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeAddQueueModal()">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Add Queue Task</h2>
+        <button class="modal-close" onclick="closeAddQueueModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" id="add-queue-name" placeholder="e.g. Fix login page">
+        </div>
+        <div class="form-group">
+          <label>Prompt</label>
+          <textarea id="add-queue-prompt" rows="4" placeholder="e.g. Fix the login page CSS..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Or load from file</label>
+          <select id="add-queue-promptfile" onchange="loadPromptFile()">
+            <option value="">-- Select prompt file --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Working Directory</label>
+          <input type="text" id="add-queue-workdir" placeholder="e.g. C:\Users\kyjs0\Documents\Work\AI_Platform\playground-fc">
+        </div>
+        <div class="form-group">
+          <label>Channel</label>
+          <select id="add-queue-channel">
+            <option value="local">Local</option>
+            <option value="slack">Slack</option>
+            <option value="github">GitHub</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Chat ID</label>
+          <input type="text" id="add-queue-chatid" placeholder="e.g. kyjs0/test2#1">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeAddQueueModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="addQueueTask()">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Queue Task Detail Modal -->
+  <div id="queue-detail-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeQueueDetailModal()">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="queue-detail-title">Task Detail</h2>
+        <button class="modal-close" onclick="closeQueueDetailModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="detail-grid" id="queue-detail-content"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeQueueDetailModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

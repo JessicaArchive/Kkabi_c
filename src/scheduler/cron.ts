@@ -12,12 +12,16 @@ import type { CronJob, CronJobState, ChannelType } from "../types.js";
 import { getAgent } from "../agents/store.js";
 import { buildPrompt } from "../claude/context.js";
 import { enqueue } from "../claude/queue.js";
-import { executeWorkflow } from "../workflow/engine.js";
 
 const CRONS_FILE = resolve(process.cwd(), "data", "crons.json");
 const RUNS_DIR = resolve(process.cwd(), "data", "cron-runs");
 const ERROR_ALERT_THRESHOLD = 3;
 const activeTasks = new Map<string, cron.ScheduledTask>();
+const runningJobs = new Map<string, { startMs: number; logFile: string }>();
+
+export function getRunningJobs(): Map<string, { startMs: number; logFile: string }> {
+  return runningJobs;
+}
 
 // --- Send callback ---
 
@@ -69,7 +73,6 @@ export function addCron(
   channelType: ChannelType,
   chatId: string,
   agentId?: string,
-  workflowId?: string,
 ): CronJob {
   if (!cron.validate(schedule)) {
     throw new Error(`Invalid cron schedule: ${schedule}`);
@@ -87,7 +90,6 @@ export function addCron(
     createdAt: now,
     updatedAt: now,
     ...(agentId ? { agentId } : {}),
-    ...(workflowId ? { workflowId } : {}),
   };
 
   const jobs = loadCronsRaw();
@@ -113,6 +115,39 @@ export function removeCron(id: string): boolean {
     activeTasks.delete(removed.id);
   }
   return true;
+}
+
+export function updateCron(id: string, updates: Partial<Pick<CronJob, "schedule" | "name" | "prompt" | "workingDir">>): CronJob | null {
+  const jobs = loadCronsRaw();
+  const job = jobs.find((j) => j.id === id || j.id.startsWith(id));
+  if (!job) return null;
+
+  if (updates.schedule) {
+    if (!cron.validate(updates.schedule)) {
+      throw new Error(`Invalid cron schedule: ${updates.schedule}`);
+    }
+    job.schedule = updates.schedule;
+  }
+  if (updates.name !== undefined) job.name = updates.name;
+  if (updates.prompt !== undefined) job.prompt = updates.prompt;
+  if (updates.workingDir !== undefined) job.workingDir = updates.workingDir;
+
+  job.updatedAt = Date.now();
+  saveCronsRaw(jobs);
+
+  // Reschedule if schedule changed
+  if (updates.schedule) {
+    const task = activeTasks.get(job.id);
+    if (task) {
+      task.stop();
+      activeTasks.delete(job.id);
+    }
+    if (job.enabled) {
+      scheduleCron(job);
+    }
+  }
+
+  return job;
 }
 
 export function toggleCron(id: string): CronJob | null {
@@ -151,7 +186,19 @@ function resolvePrompt(job: CronJob): string {
 function scheduleCron(job: CronJob): void {
   if (!job.enabled) return;
 
+  // Stop existing task to prevent duplicates
+  const existing = activeTasks.get(job.id);
+  if (existing) {
+    existing.stop();
+    activeTasks.delete(job.id);
+  }
+
   const task = cron.schedule(job.schedule, async () => {
+    // Skip if already running
+    if (runningJobs.has(job.id)) {
+      console.log(`[Cron] Skipping ${job.id}: already running`);
+      return;
+    }
     await executeCronJob(job);
   });
 
@@ -159,38 +206,6 @@ function scheduleCron(job: CronJob): void {
 }
 
 async function executeCronJob(job: CronJob): Promise<void> {
-  // If this cron triggers a workflow, delegate to workflow engine
-  if (job.workflowId) {
-    const startMs = Date.now();
-    try {
-      await executeWorkflow(job.workflowId);
-      updateJobState(job.id, {
-        lastRunAtMs: startMs,
-        lastStatus: "ok",
-        lastDurationMs: Date.now() - startMs,
-        consecutiveErrors: 0,
-      });
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      const newConsecutiveErrors = (job.state?.consecutiveErrors ?? 0) + 1;
-      updateJobState(job.id, {
-        lastRunAtMs: startMs,
-        lastStatus: "error",
-        lastDurationMs: Date.now() - startMs,
-        consecutiveErrors: newConsecutiveErrors,
-        lastError: errorMsg,
-      });
-      if (newConsecutiveErrors === ERROR_ALERT_THRESHOLD && sendCallback) {
-        await sendCallback(
-          job.channelType,
-          job.chatId,
-          `[Cron Alert] Workflow "${job.workflowId}" has failed ${ERROR_ALERT_THRESHOLD} times. Error: ${errorMsg}`,
-        );
-      }
-    }
-    return;
-  }
-
   const startMs = Date.now();
   const agent = job.agentId ? getAgent(job.agentId) : undefined;
 
@@ -202,21 +217,23 @@ async function executeCronJob(job: CronJob): Promise<void> {
     promptText = `[PERSONA]\n${agent.persona}\n\n${promptText}`;
   }
 
-  // Build full prompt with conversation context
-  const fullPrompt = buildPrompt(promptText, job.chatId);
-
   // Resolve settings: CronJob > Agent > defaults
   const model = job.model ?? agent?.model;
   const workingDir = job.workingDir ?? agent?.workingDir;
   const timeoutMs = job.timeoutMs ?? agent?.timeoutMs;
 
+  const logFile = resolve(RUNS_DIR, "logs", `${job.id}-${startMs}.log`);
+
+  runningJobs.set(job.id, { startMs, logFile });
+
   const { promise } = enqueue({
-    prompt: fullPrompt,
+    prompt: promptText,
     chatId: job.chatId,
     channel: job.channelType,
     model,
     workingDir,
     timeoutMs,
+    logFile,
   });
 
   try {
@@ -244,6 +261,7 @@ async function executeCronJob(job: CronJob): Promise<void> {
       model,
       error: result.error,
       outputSnippet: result.output?.slice(0, 200),
+      logFile,
     });
 
     // Send result to channel
@@ -263,6 +281,8 @@ async function executeCronJob(job: CronJob): Promise<void> {
         `[Cron Alert] "${job.name}" (${job.id.slice(0, 8)}) has failed ${ERROR_ALERT_THRESHOLD} times in a row. Last error: ${result.error ?? "unknown"}`,
       );
     }
+
+    runningJobs.delete(job.id);
   } catch (err) {
     const durationMs = Date.now() - startMs;
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -283,6 +303,7 @@ async function executeCronJob(job: CronJob): Promise<void> {
       durationMs,
       model,
       error: errorMsg,
+      logFile,
     });
 
     console.error(`[Cron] Error executing job ${job.id}:`, err);
@@ -294,6 +315,8 @@ async function executeCronJob(job: CronJob): Promise<void> {
         `[Cron Alert] "${job.name}" (${job.id.slice(0, 8)}) has failed ${ERROR_ALERT_THRESHOLD} times in a row. Last error: ${errorMsg}`,
       );
     }
+
+    runningJobs.delete(job.id);
   }
 }
 
@@ -329,6 +352,7 @@ interface CronRunLogEntry {
   model?: string;
   error?: string;
   outputSnippet?: string;
+  logFile?: string;
 }
 
 function appendRunLog(jobId: string, entry: CronRunLogEntry): void {
