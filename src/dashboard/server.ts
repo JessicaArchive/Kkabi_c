@@ -1,11 +1,21 @@
 import express from "express";
+import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { readFileSync, writeFileSync, existsSync, readdirSync, unlinkSync } from "node:fs";
 import { execSync } from "node:child_process";
 import {
+  setupChatWebSocket, listSessions, deleteSession,
+  getPromptFiles, getPromptFileContent,
+} from "./chat.js";
+import {
   listCrons, getCron, addCron, removeCron, toggleCron, updateCron,
   runCronNow, reloadCrons, getRunningJobs,
 } from "../scheduler/cron.js";
+import {
+  listQueue, addQueueTask, removeQueueTask, updateQueueTask,
+  runQueueTask, startSequentialQueue, stopSequentialQueue,
+  isSequentialRunning, getRunningQueueTasks,
+} from "../scheduler/taskQueue.js";
 
 const RUNS_DIR = resolve(process.cwd(), "data", "cron-runs");
 
@@ -77,29 +87,53 @@ export function createDashboardServer(port = 3000): void {
       for (const line of content.split("\n")) {
         if (!line.trim()) continue;
         try {
-          runs.push(JSON.parse(line));
+          const entry = JSON.parse(line);
+          // Tag source if not already tagged
+          if (!entry.source) entry.source = "cron";
+          runs.push(entry);
         } catch { /* skip malformed */ }
       }
     }
 
-    // Add currently running jobs
+    // Add currently running cron jobs
     const running = getRunningJobs();
     for (const [jobId, info] of running) {
       runs.push({
         ts: info.startMs,
         jobId,
+        source: "cron",
         status: "running",
         durationMs: Date.now() - info.startMs,
       });
     }
 
-    // Enrich with job name
+    // Add currently running queue tasks
+    const runningQueue = getRunningQueueTasks();
+    for (const [taskId, info] of runningQueue) {
+      runs.push({
+        ts: info.startMs,
+        jobId: `queue:${taskId}`,
+        source: "queue",
+        status: "running",
+        durationMs: Date.now() - info.startMs,
+      });
+    }
+
+    // Enrich with job/task name
     const jobs = listCrons();
     const jobMap = new Map(jobs.map((j) => [j.id, j]));
+    const queueTasks = listQueue();
+    const queueMap = new Map(queueTasks.map((t) => [t.id, t]));
     for (const run of runs) {
-      const job = jobMap.get((run as any).jobId);
-      if (job) {
-        (run as any).jobName = job.name;
+      const r = run as any;
+      if (r.source === "queue") {
+        const taskId = r.jobId.replace("queue:", "");
+        const task = queueMap.get(taskId);
+        if (task) r.jobName = task.name;
+        if (!r.jobName && r.taskName) r.jobName = r.taskName;
+      } else {
+        const job = jobMap.get(r.jobId);
+        if (job) r.jobName = job.name;
       }
     }
 
@@ -141,6 +175,50 @@ export function createDashboardServer(port = 3000): void {
 
     const content = readFileSync(logFile, "utf-8");
     res.type("text/plain").send(content);
+  });
+
+  // --- Queue ---
+  app.get("/api/queue", (_req, res) => {
+    res.json(listQueue());
+  });
+
+  app.post("/api/queue", (req, res) => {
+    try {
+      const task = addQueueTask(req.body);
+      res.status(201).json(task);
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  app.put("/api/queue/:id", (req, res) => {
+    const updated = updateQueueTask(req.params.id, req.body);
+    if (!updated) { res.status(404).json({ error: "Not found" }); return; }
+    res.json(updated);
+  });
+
+  app.delete("/api/queue/:id", (req, res) => {
+    const removed = removeQueueTask(req.params.id);
+    res.json({ removed });
+  });
+
+  app.post("/api/queue/:id/run", async (req, res) => {
+    const msg = await runQueueTask(req.params.id);
+    res.json({ message: msg });
+  });
+
+  app.post("/api/queue/start", async (_req, res) => {
+    const msg = await startSequentialQueue();
+    res.json({ message: msg });
+  });
+
+  app.post("/api/queue/stop", (_req, res) => {
+    const msg = stopSequentialQueue();
+    res.json({ message: msg });
+  });
+
+  app.get("/api/queue/status", (_req, res) => {
+    res.json({ running: isSequentialRunning() });
   });
 
   // --- Branches ---
@@ -236,7 +314,36 @@ export function createDashboardServer(port = 3000): void {
     res.json(running);
   });
 
-  app.listen(port, () => {
+  // --- Chat Sessions ---
+  app.get("/api/chat/sessions", (_req, res) => {
+    res.json(listSessions());
+  });
+
+  app.delete("/api/chat/sessions/:id", (req, res) => {
+    res.json({ deleted: deleteSession(req.params.id) });
+  });
+
+  // --- Prompt Files ---
+  app.get("/api/prompts", (_req, res) => {
+    res.json(getPromptFiles());
+  });
+
+  app.get("/api/prompts/:filename", (req, res) => {
+    const content = getPromptFileContent(req.params.filename);
+    if (!content) { res.status(404).json({ error: "Not found" }); return; }
+    res.type("text/plain").send(content);
+  });
+
+  // --- Project Paths ---
+  app.get("/api/projects/paths", (_req, res) => {
+    res.json(discoverProjects());
+  });
+
+  // --- Start server with WebSocket ---
+  const httpServer = createServer(app);
+  setupChatWebSocket(httpServer);
+
+  httpServer.listen(port, () => {
     console.log(`[Dashboard] http://localhost:${port}/dashboard`);
   });
 }
