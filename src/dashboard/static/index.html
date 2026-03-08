@@ -7,29 +7,56 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 </head>
 <body>
   <aside class="sidebar">
     <div class="sidebar-brand">
-      <span class="brand-icon">K</span>
+      <span class="brand-icon">
+        <svg width="24" height="24" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- horns -->
+          <path d="M18 22C16 14 12 8 10 6c2 2 8 6 12 16z" fill="#fff" opacity="0.9"/>
+          <path d="M46 22C48 14 52 8 54 6c-2 2-8 6-12 16z" fill="#fff" opacity="0.9"/>
+          <!-- face -->
+          <circle cx="32" cy="38" r="20" fill="#fff"/>
+          <!-- eyes -->
+          <ellipse cx="24" cy="35" rx="3.5" ry="4" fill="#1a1a2e"/>
+          <ellipse cx="40" cy="35" rx="3.5" ry="4" fill="#1a1a2e"/>
+          <circle cx="25.5" cy="33.5" r="1.2" fill="#fff"/>
+          <circle cx="41.5" cy="33.5" r="1.2" fill="#fff"/>
+          <!-- blush -->
+          <ellipse cx="18" cy="42" rx="4" ry="2.5" fill="#ff9bb3" opacity="0.5"/>
+          <ellipse cx="46" cy="42" rx="4" ry="2.5" fill="#ff9bb3" opacity="0.5"/>
+          <!-- smile -->
+          <path d="M25 46c3 4 11 4 14 0" stroke="#1a1a2e" stroke-width="2" stroke-linecap="round" fill="none"/>
+          <!-- little fang -->
+          <path d="M34 46l1.5 3 1.5-3" fill="#fff" stroke="#1a1a2e" stroke-width="0.8"/>
+        </svg>
+      </span>
       <span class="brand-text">Kkabi</span>
     </div>
     <nav>
+      <a class="nav-link" data-page="home" onclick="navigate('home')">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.4L1 7v7.5a.5.5 0 0 0 .5.5H6V10h4v5h4.5a.5.5 0 0 0 .5-.5V7L8 1.4z"/></svg>
+        Home
+      </a>
       <a class="nav-link" data-page="chat" onclick="navigate('chat')">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2.5 1A1.5 1.5 0 0 0 1 2.5v9A1.5 1.5 0 0 0 2.5 13H5.3l2.4 1.8a.5.5 0 0 0 .6 0l2.4-1.8h2.8a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 13.5 1h-11zM2.5 2h11a.5.5 0 0 1 .5.5v9a.5.5 0 0 1-.5.5h-3a.5.5 0 0 0-.3.1L8 13.7l-2.2-1.6a.5.5 0 0 0-.3-.1h-3a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5z"/></svg>
         Chat
       </a>
-      <a class="nav-link active" data-page="crons" onclick="navigate('crons')">
+      <a class="nav-link" data-page="crons" onclick="navigate('crons')">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zm0 14.5a6.5 6.5 0 1 1 0-13 6.5 6.5 0 0 1 0 13zM7.25 3v5.25l3.5 2.1.75-1.23-2.75-1.65V3h-1.5z"/></svg>
-        Cron Jobs
+        Scheduler
       </a>
       <a class="nav-link" data-page="queue" onclick="navigate('queue')">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v2H2V2zm0 5h12v2H2V7zm0 5h12v2H2v-2z"/></svg>
-        Queue
+        Tasks
       </a>
       <a class="nav-link" data-page="runs" onclick="navigate('runs')">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.5A2.5 2.5 0 0 1 3.5 0h8.75a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0V1.5h-2v1.875c0 .28-.226.5-.504.5H5.504a.504.504 0 0 1-.504-.5V1.5H3.5a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V7.25a.75.75 0 0 1 1.5 0v7.25a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 1 14.5V2.5z"/></svg>
-        Runs
+        History
       </a>
       <a class="nav-link" data-page="branches" onclick="navigate('branches')">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25z"/></svg>
@@ -43,28 +70,94 @@
   </aside>
 
   <main class="content">
+    <!-- Home Page -->
+    <div id="home-page" class="page">
+      <div class="page-header">
+        <div>
+          <h1>Dashboard</h1>
+          <p class="page-desc">System overview</p>
+        </div>
+      </div>
+      <div class="home-grid">
+        <div class="home-card">
+          <div class="home-card-icon" style="background:var(--blue-dim);color:var(--blue);">
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zm0 14.5a6.5 6.5 0 1 1 0-13 6.5 6.5 0 0 1 0 13zM7.25 3v5.25l3.5 2.1.75-1.23-2.75-1.65V3h-1.5z"/></svg>
+          </div>
+          <div class="home-card-info">
+            <div class="home-card-label">Scheduler</div>
+            <div class="home-card-value" id="home-crons-count">-</div>
+          </div>
+        </div>
+        <div class="home-card">
+          <div class="home-card-icon" style="background:var(--yellow-dim);color:var(--yellow);">
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v2H2V2zm0 5h12v2H2V7zm0 5h12v2H2v-2z"/></svg>
+          </div>
+          <div class="home-card-info">
+            <div class="home-card-label">Tasks</div>
+            <div class="home-card-value" id="home-queue-count">-</div>
+          </div>
+        </div>
+        <div class="home-card">
+          <div class="home-card-icon" style="background:var(--green-dim);color:var(--green);">
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M2.5 1A1.5 1.5 0 0 0 1 2.5v9A1.5 1.5 0 0 0 2.5 13H5.3l2.4 1.8a.5.5 0 0 0 .6 0l2.4-1.8h2.8a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 13.5 1h-11z"/></svg>
+          </div>
+          <div class="home-card-info">
+            <div class="home-card-label">Chat Sessions</div>
+            <div class="home-card-value" id="home-chat-count">-</div>
+          </div>
+        </div>
+      </div>
+      <div class="home-section">
+        <h3>Recent Runs</h3>
+        <div class="card">
+          <table>
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Job</th>
+                <th>Time</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="home-recent-runs"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <!-- Chat Page -->
     <div id="chat-page" class="page">
       <div class="chat-layout">
         <div class="chat-sidebar">
           <div class="chat-sidebar-header">
             <h3>Sessions</h3>
-            <button class="btn btn-primary btn-sm" onclick="openNewChatModal()">New</button>
+            <button class="btn btn-primary btn-sm" onclick="startNewChat()">New</button>
+          </div>
+          <div class="chat-search-wrap">
+            <input type="text" id="chat-search-input" placeholder="Search..." oninput="filterChatSessions()">
           </div>
           <div id="chat-sessions-list" class="chat-sessions-list"></div>
+          <div class="chat-project-select">
+            <label>Project</label>
+            <select id="chat-project-dropdown">
+              <option value="">Default (Kkabi_c)</option>
+            </select>
+          </div>
         </div>
         <div class="chat-main">
           <div id="chat-header" class="chat-header">
             <span id="chat-session-name">Select or start a session</span>
+            <span id="chat-ws-status" class="ws-status ws-disconnected" title="Disconnected"></span>
             <div class="chat-header-actions">
+              <button class="btn btn-sm" onclick="exportChat()" title="Export chat" id="chat-export-btn" style="display:none">Export</button>
               <button class="btn btn-sm" onclick="addChatToQueue()" title="Add to Queue" style="display:none" id="chat-add-queue-btn">Add to Queue</button>
             </div>
           </div>
           <div id="chat-messages" class="chat-messages">
-            <div class="chat-empty">Start a new chat session</div>
+            <div class="chat-empty">Type a message to start a new conversation</div>
           </div>
-          <div id="chat-input-area" class="chat-input-area" style="display:none">
-            <textarea id="chat-input" placeholder="Type a message..." rows="2" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMessage()}"></textarea>
+          <div id="chat-input-area" class="chat-input-area">
+            <textarea id="chat-input" placeholder="Type a message..." rows="2" onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();sendChatMessage()}"></textarea>
             <button class="btn btn-primary" onclick="sendChatMessage()">Send</button>
             <button class="btn btn-danger" onclick="stopChat()" id="chat-stop-btn" style="display:none">Stop</button>
           </div>
@@ -73,10 +166,10 @@
     </div>
 
     <!-- Crons Page -->
-    <div id="crons-page" class="page active">
+    <div id="crons-page" class="page">
       <div class="page-header">
         <div>
-          <h1>Cron Jobs</h1>
+          <h1>Scheduler</h1>
           <p class="page-desc">Manage scheduled tasks</p>
         </div>
         <button class="btn btn-primary" onclick="openAddCronModal()">
@@ -103,7 +196,7 @@
     <div id="queue-page" class="page">
       <div class="page-header">
         <div>
-          <h1>Queue</h1>
+          <h1>Tasks</h1>
           <p class="page-desc">Task queue — run on demand or sequentially</p>
         </div>
         <div class="page-header-actions">
@@ -137,9 +230,21 @@
     <div id="runs-page" class="page">
       <div class="page-header">
         <div>
-          <h1>Runs</h1>
+          <h1>History</h1>
           <p class="page-desc">Execution history</p>
         </div>
+      </div>
+      <div class="filter-bar">
+        <span class="filter-label">Status:</span>
+        <button class="filter-btn active" data-type="status" data-value="all" onclick="setRunsFilter('status','all')">All</button>
+        <button class="filter-btn" data-type="status" data-value="ok" onclick="setRunsFilter('status','ok')">Success</button>
+        <button class="filter-btn" data-type="status" data-value="error" onclick="setRunsFilter('status','error')">Failed</button>
+        <button class="filter-btn" data-type="status" data-value="running" onclick="setRunsFilter('status','running')">Running</button>
+        <span class="filter-sep"></span>
+        <span class="filter-label">Source:</span>
+        <button class="filter-btn active" data-type="source" data-value="all" onclick="setRunsFilter('source','all')">All</button>
+        <button class="filter-btn" data-type="source" data-value="cron" onclick="setRunsFilter('source','cron')">Cron</button>
+        <button class="filter-btn" data-type="source" data-value="queue" onclick="setRunsFilter('source','queue')">Queue</button>
       </div>
       <div class="card">
         <table>
@@ -252,6 +357,7 @@
       </div>
       <div class="modal-footer">
         <button class="btn" onclick="closeDetailModal()">Close</button>
+        <button class="btn btn-primary" onclick="saveCronPrompt()">Save</button>
       </div>
     </div>
   </div>
@@ -301,32 +407,6 @@
       <div class="modal-footer">
         <button class="btn" onclick="closeAddCronModal()">Cancel</button>
         <button class="btn btn-primary" onclick="addCron()">Create</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- New Chat Modal -->
-  <div id="new-chat-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeNewChatModal()">
-    <div class="modal">
-      <div class="modal-header">
-        <h2>New Chat Session</h2>
-        <button class="modal-close" onclick="closeNewChatModal()">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div class="form-group">
-          <label>Session Name</label>
-          <input type="text" id="new-chat-name" placeholder="e.g. Fix login bug">
-        </div>
-        <div class="form-group">
-          <label>Project</label>
-          <select id="new-chat-project">
-            <option value="">Default (Kkabi_c)</option>
-          </select>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn" onclick="closeNewChatModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="createChatSession()">Start</button>
       </div>
     </div>
   </div>
@@ -393,6 +473,7 @@
     </div>
   </div>
 
+  <div id="toast-container" class="toast-container"></div>
   <script src="app.js"></script>
 </body>
 </html>

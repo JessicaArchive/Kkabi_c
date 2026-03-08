@@ -78,7 +78,6 @@ async function runClaudeOnce(options: RunClaudeOptions): Promise<ClaudeResult> {
     delete env.CLAUDECODE;
     const proc = spawn("claude", args, {
       cwd,
-      shell: true,
       stdio: ["ignore", "pipe", "pipe"],
       env,
     });
