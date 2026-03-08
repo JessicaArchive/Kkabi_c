@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { readFileSync, writeFileSync, existsSync, readdirSync, unlinkSync } from "node:fs";
 import { execSync } from "node:child_process";
 import {
-  setupChatWebSocket, listSessions, deleteSession,
+  setupChatWebSocket, listSessions, deleteSession, renameSession,
   getPromptFiles, getPromptFileContent,
 } from "./chat.js";
 import {
@@ -222,17 +222,18 @@ export function createDashboardServer(port = 3000): void {
   });
 
   // --- Branches ---
-  const PROJECTS_BASE = resolve("C:/Users/kyjs0/Documents/Work/AI_Platform");
+  const PROJECTS_BASE = resolve(process.env.KKABI_PROJECTS_BASE || process.cwd(), "..");
 
   function discoverProjects(): Record<string, string> {
     const projects: Record<string, string> = {};
+    if (!existsSync(PROJECTS_BASE)) return projects;
     for (const entry of readdirSync(PROJECTS_BASE, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const dir = resolve(PROJECTS_BASE, entry.name);
       if (!existsSync(resolve(dir, ".git"))) continue;
       // Check if it has a GitHub remote
       try {
-        const remote = execSync("git remote get-url origin", { cwd: dir, encoding: "utf-8" }).trim();
+        const remote = execSync("git remote get-url origin", { cwd: dir, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
         if (remote.includes("github")) {
           projects[entry.name] = dir;
         }
@@ -317,6 +318,14 @@ export function createDashboardServer(port = 3000): void {
   // --- Chat Sessions ---
   app.get("/api/chat/sessions", (_req, res) => {
     res.json(listSessions());
+  });
+
+  app.patch("/api/chat/sessions/:id", (req, res) => {
+    const { name } = req.body;
+    if (!name) { res.status(400).json({ error: "Name required" }); return; }
+    const session = renameSession(req.params.id, name);
+    if (!session) { res.status(404).json({ error: "Not found" }); return; }
+    res.json(session);
   });
 
   app.delete("/api/chat/sessions/:id", (req, res) => {

@@ -2,10 +2,12 @@ import { WebSocketServer, WebSocket } from "ws";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
-  readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync,
+  readFileSync, mkdirSync, existsSync, readdirSync, unlinkSync,
 } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Server } from "node:http";
+import { buildPrompt } from "../claude/context.js";
 
 const SESSIONS_DIR = resolve(process.cwd(), "data", "chat-sessions");
 
@@ -20,6 +22,7 @@ export interface ChatSession {
 }
 
 const activeProcs = new Map<string, import("node:child_process").ChildProcess>();
+const sessionCache = new Map<string, ChatSession>();
 
 export function setupChatWebSocket(server: Server): void {
   mkdirSync(SESSIONS_DIR, { recursive: true });
@@ -56,6 +59,7 @@ function handleMessage(
   getSessionId: () => string | null,
   setSessionId: (id: string) => void,
 ): void {
+  console.log(`[Chat] WS message:`, msg.type, msg.text?.slice(0, 50) || '');
   switch (msg.type) {
     case "new-session": {
       const session = createSession(msg.name, msg.workingDir);
@@ -129,9 +133,12 @@ function sendMessage(ws: WebSocket, sessionId: string, text: string): void {
   session.updatedAt = Date.now();
   saveSession(session);
 
+  // Build full prompt with system context (persona, capabilities, cron tags, etc.)
+  const fullPrompt = buildPrompt(text, `dashboard:${sessionId}`);
+
   // Build claude args — per-message spawn with --resume for continuity
   const args = [
-    "-p", text,
+    "-p", fullPrompt,
     "--output-format", "stream-json",
     "--verbose",
   ];
@@ -143,27 +150,37 @@ function sendMessage(ws: WebSocket, sessionId: string, text: string): void {
   const cwd = session.workingDir || process.cwd();
   const env = { ...process.env };
   delete env.CLAUDECODE;
+  delete env.CLAUDE_CODE_ENTRYPOINT;
 
-  const proc = spawn("claude", args, {
+  console.log(`[Chat] Spawning claude with args:`, args, `cwd:`, cwd);
+  console.log(`[Chat] CLAUDECODE=${env.CLAUDECODE}, ENTRYPOINT=${env.CLAUDE_CODE_ENTRYPOINT}`);
+  const proc = spawn("/opt/homebrew/bin/claude", args, {
     cwd,
     env,
-    shell: true,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
   });
+  // Close stdin immediately — we use -p flag for input
+  proc.stdin?.end();
   activeProcs.set(sessionId, proc);
+
+  proc.on("error", (err) => {
+    console.error(`[Chat] Spawn error:`, err);
+    ws.send(JSON.stringify({ type: "error", error: `Spawn failed: ${err.message}` }));
+  });
 
   let fullResponse = "";
   let claudeSessionId: string | undefined;
 
   proc.stdout.on("data", (chunk: Buffer) => {
+    console.log(`[Chat] stdout chunk (${chunk.length} bytes)`);
     const lines = chunk.toString().split("\n").filter(Boolean);
     for (const line of lines) {
       try {
         const event = JSON.parse(line);
 
-        // Extract session ID
-        if (event.sessionId) {
-          claudeSessionId = event.sessionId;
+        // Extract session ID (Claude CLI uses snake_case: session_id)
+        if (event.session_id) {
+          claudeSessionId = event.session_id;
         }
 
         // Collect assistant text
@@ -174,8 +191,6 @@ function sendMessage(ws: WebSocket, sessionId: string, text: string): void {
             }
           }
         }
-
-        // Content block delta (streaming chunks)
         if (event.type === "content_block_delta" && event.delta?.text) {
           fullResponse += event.delta.text;
         }
@@ -188,10 +203,13 @@ function sendMessage(ws: WebSocket, sessionId: string, text: string): void {
   });
 
   proc.stderr.on("data", (chunk: Buffer) => {
-    ws.send(JSON.stringify({ type: "claude-stderr", text: chunk.toString() }));
+    const text = chunk.toString();
+    console.error(`[Chat] stderr:`, text);
+    ws.send(JSON.stringify({ type: "claude-stderr", text }));
   });
 
   proc.on("close", (code: number | null) => {
+    console.log(`[Chat] claude process closed with code:`, code);
     activeProcs.delete(sessionId);
 
     const sess = loadSession(sessionId);
@@ -213,15 +231,22 @@ function sendMessage(ws: WebSocket, sessionId: string, text: string): void {
 // --- Persistence ---
 
 function loadSession(id: string): ChatSession | null {
+  const cached = sessionCache.get(id);
+  if (cached) return cached;
   const file = resolve(SESSIONS_DIR, `${id}.json`);
   if (!existsSync(file)) return null;
-  return JSON.parse(readFileSync(file, "utf-8"));
+  const session = JSON.parse(readFileSync(file, "utf-8"));
+  sessionCache.set(id, session);
+  return session;
 }
 
 function saveSession(session: ChatSession): void {
+  sessionCache.set(session.id, session);
   mkdirSync(SESSIONS_DIR, { recursive: true });
   const file = resolve(SESSIONS_DIR, `${session.id}.json`);
-  writeFileSync(file, JSON.stringify(session, null, 2), "utf-8");
+  writeFile(file, JSON.stringify(session, null, 2), "utf-8").catch((err) =>
+    console.error(`[Chat] Failed to save session:`, err)
+  );
 }
 
 // --- REST API helpers ---
@@ -235,10 +260,20 @@ export function listSessions(): ChatSession[] {
   }).sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
+export function renameSession(id: string, name: string): ChatSession | null {
+  const session = loadSession(id);
+  if (!session) return null;
+  session.name = name;
+  session.updatedAt = Date.now();
+  saveSession(session);
+  return session;
+}
+
 export function deleteSession(id: string): boolean {
   const file = resolve(SESSIONS_DIR, `${id}.json`);
   if (!existsSync(file)) return false;
   unlinkSync(file);
+  sessionCache.delete(id);
   return true;
 }
 
