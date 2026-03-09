@@ -1,4 +1,4 @@
-export type ChannelType = "slack" | "github" | "gchat" | "local";
+export type ChannelType = "slack" | "github" | "gchat" | "telegram" | "local";
 
 export interface IncomingMessage {
   id: string;

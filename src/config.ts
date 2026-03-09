@@ -28,9 +28,16 @@ const GitHubConfigSchema = z.object({
   assignee: z.string().optional(),
 });
 
+const TelegramConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  botToken: z.string().min(1),
+  allowedChatIds: z.array(z.number()).default([]),
+});
+
 const ChannelsConfigSchema = z.object({
   slack: SlackConfigSchema.optional(),
   github: GitHubConfigSchema.optional(),
+  telegram: TelegramConfigSchema.optional(),
 });
 
 const ClaudeConfigSchema = z.object({
@@ -72,6 +79,7 @@ export type AppConfig = z.infer<typeof ConfigSchema>;
 export type SlackConfig = z.infer<typeof SlackConfigSchema>;
 export type GitHubConfig = z.infer<typeof GitHubConfigSchema>;
 export type GitHubRepo = z.infer<typeof GitHubRepoSchema>;
+export type TelegramConfig = z.infer<typeof TelegramConfigSchema>;
 
 export function getRepoName(repo: GitHubRepo): string {
   return typeof repo === "string" ? repo : repo.name;
