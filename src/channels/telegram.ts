@@ -11,6 +11,7 @@ export class TelegramChannel implements Channel {
   private bot: Telegraf;
   private handler: ((msg: IncomingMessage) => Promise<void>) | null = null;
   private pendingConfirms = new Map<string, (approved: boolean) => void>();
+  private typingIntervals = new Map<string, ReturnType<typeof setInterval>>();
 
   constructor(private config: TelegramConfig) {
     this.bot = new Telegraf(config.botToken);
@@ -42,10 +43,13 @@ export class TelegramChannel implements Channel {
       };
 
       if (this.handler) {
+        this.startTyping(String(chatId));
         try {
           await this.handler(incoming);
         } catch (err) {
           console.error("[Telegram] Handler error:", err);
+        } finally {
+          this.stopTyping(String(chatId));
         }
       }
     });
@@ -153,6 +157,26 @@ export class TelegramChannel implements Channel {
 
   onMessage(handler: (msg: IncomingMessage) => Promise<void>): void {
     this.handler = handler;
+  }
+
+  private startTyping(chatId: string): void {
+    // Send immediately, then repeat every 4s (Telegram typing expires after 5s)
+    const numChatId = Number(chatId);
+    this.bot.telegram.sendChatAction(numChatId, "typing").catch(() => {});
+
+    const interval = setInterval(() => {
+      this.bot.telegram.sendChatAction(numChatId, "typing").catch(() => {});
+    }, 4000);
+
+    this.typingIntervals.set(chatId, interval);
+  }
+
+  private stopTyping(chatId: string): void {
+    const interval = this.typingIntervals.get(chatId);
+    if (interval) {
+      clearInterval(interval);
+      this.typingIntervals.delete(chatId);
+    }
   }
 }
 
