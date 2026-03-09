@@ -81,16 +81,13 @@ export function createHandler(channel: Channel) {
       }
     }
 
-    // Send "Processing..." message
-    const pendingMsgId = await channel.sendText(chatId, "Processing...", threadId);
-
     // Build prompt and enqueue
     const prompt = buildPrompt(text, chatId);
     const workingDir = resolveWorkingDir(chatId, msg.channel);
     const { promise, position } = enqueue({ prompt, chatId, channel: msg.channel, workingDir });
 
     if (position > 1) {
-      await channel.editMessage(chatId, pendingMsgId, `Waiting in queue... (position ${position})`);
+      await channel.sendText(chatId, `Waiting in queue... (position ${position})`, threadId);
     }
 
     const startTime = Date.now();
@@ -101,7 +98,7 @@ export function createHandler(channel: Channel) {
 
       if (result.error) {
         const errorMsg = `Error: ${result.error}`;
-        await channel.editMessage(chatId, pendingMsgId, errorMsg);
+        await channel.sendText(chatId, errorMsg, threadId);
         saveExecution({
           prompt: text,
           output: result.error,
@@ -136,7 +133,7 @@ export function createHandler(channel: Channel) {
         }
       }
 
-      await channel.editMessage(chatId, pendingMsgId, response);
+      await channel.sendText(chatId, response, threadId);
 
       // Save conversation
       saveMessage({
@@ -160,7 +157,7 @@ export function createHandler(channel: Channel) {
       appendDailyLog(`[Kkabi] ${response.slice(0, 100)}`);
     } catch (err) {
       const errorMsg = `Unexpected error: ${err instanceof Error ? err.message : String(err)}`;
-      await channel.editMessage(chatId, pendingMsgId, errorMsg);
+      await channel.sendText(chatId, errorMsg, threadId);
     }
   };
 }
