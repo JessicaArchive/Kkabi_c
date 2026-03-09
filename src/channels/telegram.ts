@@ -119,8 +119,6 @@ export class TelegramChannel implements Channel {
   }
 
   async editMessage(chatId: string, msgId: string, text: string): Promise<void> {
-    this.stopTyping(chatId);
-
     const truncated =
       text.length > MAX_TEXT_LENGTH
         ? text.slice(0, MAX_TEXT_LENGTH - 20) + "\n\n... (truncated)"
@@ -136,6 +134,8 @@ export class TelegramChannel implements Channel {
     } catch {
       // If edit fails, send new message
       await this.sendText(chatId, text);
+    } finally {
+      this.stopTyping(chatId);
     }
   }
 
