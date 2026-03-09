@@ -4,6 +4,7 @@ import { loadConfig } from "./config.js";
 import { initDb, closeDb } from "./db/store.js";
 import { SlackChannel } from "./channels/slack.js";
 import { GitHubChannel } from "./channels/github.js";
+import { TelegramChannel } from "./channels/telegram.js";
 import { createHandler } from "./core/handler.js";
 import { startAllCrons, stopAllCrons, setCronSendCallback } from "./scheduler/cron.js";
 import { cleanOldLogs } from "./memory/manager.js";
@@ -54,6 +55,14 @@ async function main(): Promise<void> {
     github.onMessage(handler);
     await github.start();
     channels.set("github", github);
+  }
+
+  if (config.channels.telegram?.enabled) {
+    const telegram = new TelegramChannel(config.channels.telegram);
+    const handler = createHandler(telegram);
+    telegram.onMessage(handler);
+    await telegram.start();
+    channels.set("telegram", telegram);
   }
 
   // Set up cron send callback
