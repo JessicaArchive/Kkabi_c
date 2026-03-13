@@ -67,12 +67,21 @@ const SchedulerConfigSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
+const DashboardConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  port: z.number().positive().default(3000),
+});
+
+const DataDirSchema = z.string().optional();
+
 const ConfigSchema = z.object({
   channels: ChannelsConfigSchema,
   claude: ClaudeConfigSchema.default({}),
   memory: MemoryConfigSchema.default({}),
   safety: SafetyConfigSchema.default({}),
   scheduler: SchedulerConfigSchema.default({}),
+  dashboard: DashboardConfigSchema.default({}),
+  dataDir: DataDirSchema,
 });
 
 export type AppConfig = z.infer<typeof ConfigSchema>;

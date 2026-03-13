@@ -17,6 +17,18 @@ const channels = new Map<ChannelType, Channel>();
 
 const LOCAL_OUTPUT_LOG = resolve(process.cwd(), "data", "local-output.log");
 
+function getConfigPathFromArgs(argv: string[]): string | undefined {
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--config") {
+      return argv[i + 1];
+    }
+    if (argv[i].startsWith("--config=")) {
+      return argv[i].slice("--config=".length);
+    }
+  }
+  return undefined;
+}
+
 function localSend(text: string): void {
   const timestamp = new Date().toISOString();
   const line = `[${timestamp}] ${text}`;
@@ -29,7 +41,8 @@ async function main(): Promise<void> {
   console.log("Kkabi starting up...");
 
   // Load config
-  const config = loadConfig();
+  const configPath = getConfigPathFromArgs(process.argv.slice(2));
+  const config = loadConfig(configPath);
   console.log("[Config] Loaded");
 
   // Init DB
@@ -83,7 +96,9 @@ async function main(): Promise<void> {
   }
 
   // Start dashboard
-  createDashboardServer(3000);
+  if (config.dashboard.enabled) {
+    createDashboardServer(config.dashboard.port);
+  }
 
   console.log("Kkabi is ready!");
 }
