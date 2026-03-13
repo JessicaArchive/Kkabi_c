@@ -5,7 +5,9 @@ config.json
 *.db
 *.pem
 .DS_Store
-data-vc/
+data-*/
 .claude/
 CLAUDE.md
 docs/
+configs/
+*.app/
