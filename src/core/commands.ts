@@ -1,5 +1,5 @@
-import { resolve } from "node:path";
 import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import type { CommandResult, ChannelType } from "../types.js";
 import { getConfig } from "../config.js";
 import { getRecentConversation, getRecentExecutions } from "../db/store.js";
@@ -17,6 +17,11 @@ import {
   reloadCrons,
 } from "../scheduler/cron.js";
 import { loadAgents, getAgent, reloadAgents, saveAgent, removeAgent } from "../agents/store.js";
+import {
+  isProjectCommand,
+  executeProjectCommand,
+  getProjectHelpText,
+} from "../project-commands/registry.js";
 
 let workingDir = process.env.HOME ?? process.cwd();
 
@@ -40,7 +45,7 @@ export function getWorkingDir(): string {
 }
 
 export function isCommand(text: string): boolean {
-  return text.startsWith("!");
+  return text.startsWith("!") || text.startsWith("/");
 }
 
 export async function executeCommand(
@@ -48,7 +53,7 @@ export async function executeCommand(
   chatId: string,
   channel: ChannelType,
 ): Promise<CommandResult> {
-  const trimmed = text.slice(1).trim();
+  const trimmed = stripTelegramCommandSuffix(text.slice(1).trim());
   const spaceIdx = trimmed.indexOf(" ");
   const cmd = spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx);
   const args = spaceIdx === -1 ? "" : trimmed.slice(spaceIdx + 1).trim();
@@ -79,10 +84,21 @@ export async function executeCommand(
     case "agent":
       return cmdAgent(args);
     case "help":
-      return { text: HELP_TEXT };
+      return { text: HELP_TEXT + getProjectHelpText() };
     default:
+      if (isProjectCommand(cmd.toLowerCase())) {
+        return executeProjectCommand(cmd.toLowerCase(), args);
+      }
       return { text: `Unknown command: ${cmd}\nType !help for available commands` };
   }
+}
+
+function stripTelegramCommandSuffix(cmd: string): string {
+  const firstSpace = cmd.indexOf(" ");
+  const head = firstSpace === -1 ? cmd : cmd.slice(0, firstSpace);
+  const rest = firstSpace === -1 ? "" : cmd.slice(firstSpace);
+  const normalizedHead = head.replace(/@[^@\s]+$/, "");
+  return normalizedHead + rest;
 }
 
 function cmdCd(args: string): CommandResult {
@@ -416,4 +432,6 @@ const HELP_TEXT = `Kkabi Commands
 !agent add <id> "<name>" [--model M] [--dir D]  Add agent
 !agent remove <id> Remove agent
 !agent reload      Reload agents from file
-!help              Show this help`;
+!help              Show this help
+
+Telegram aliases: /status /help`;

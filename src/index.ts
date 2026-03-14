@@ -6,7 +6,8 @@ import { SlackChannel } from "./channels/slack.js";
 import { GitHubChannel } from "./channels/github.js";
 import { TelegramChannel } from "./channels/telegram.js";
 import { createHandler } from "./core/handler.js";
-import { syncWorkingDirFromConfig } from "./core/commands.js";
+import { syncWorkingDirFromConfig, getWorkingDir } from "./core/commands.js";
+import { initProjectCommands } from "./project-commands/registry.js";
 import { startAllCrons, stopAllCrons, setCronSendCallback } from "./scheduler/cron.js";
 import { cleanOldLogs } from "./memory/manager.js";
 import { cancelCurrent } from "./claude/runner.js";
@@ -45,6 +46,7 @@ async function main(): Promise<void> {
   const configPath = getConfigPathFromArgs(process.argv.slice(2));
   const config = loadConfig(configPath);
   syncWorkingDirFromConfig();
+  initProjectCommands(getWorkingDir(), config.projectType);
   console.log("[Config] Loaded");
 
   // Init DB

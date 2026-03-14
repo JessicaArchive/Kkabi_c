@@ -73,6 +73,7 @@ const DashboardConfigSchema = z.object({
 });
 
 const DataDirSchema = z.string().optional();
+const ProjectTypeSchema = z.string().optional();
 
 const ConfigSchema = z.object({
   channels: ChannelsConfigSchema,
@@ -82,6 +83,7 @@ const ConfigSchema = z.object({
   scheduler: SchedulerConfigSchema.default({}),
   dashboard: DashboardConfigSchema.default({}),
   dataDir: DataDirSchema,
+  projectType: ProjectTypeSchema,
 });
 
 export type AppConfig = z.infer<typeof ConfigSchema>;
