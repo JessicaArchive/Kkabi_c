@@ -12,9 +12,7 @@ import type { CronJob, CronJobState, ChannelType } from "../types.js";
 import { getAgent } from "../agents/store.js";
 import { buildPrompt } from "../claude/context.js";
 import { enqueue } from "../claude/queue.js";
-
-const CRONS_FILE = resolve(process.cwd(), "data", "crons.json");
-const RUNS_DIR = resolve(process.cwd(), "data", "cron-runs");
+import { getCronRunsDir, getCronsFile } from "../paths.js";
 const ERROR_ALERT_THRESHOLD = 3;
 const activeTasks = new Map<string, cron.ScheduledTask>();
 const runningJobs = new Map<string, { startMs: number; logFile: string }>();
@@ -40,8 +38,9 @@ interface CronsFile {
 }
 
 function loadCronsRaw(): CronJob[] {
-  if (!existsSync(CRONS_FILE)) return [];
-  const raw = readFileSync(CRONS_FILE, "utf-8");
+  const cronsFile = getCronsFile();
+  if (!existsSync(cronsFile)) return [];
+  const raw = readFileSync(cronsFile, "utf-8");
   const parsed = JSON.parse(raw);
   // Support both old array format and new { version, jobs } format
   if (Array.isArray(parsed)) {
@@ -51,9 +50,10 @@ function loadCronsRaw(): CronJob[] {
 }
 
 function saveCronsRaw(jobs: CronJob[]): void {
-  mkdirSync(dirname(CRONS_FILE), { recursive: true });
+  const cronsFile = getCronsFile();
+  mkdirSync(dirname(cronsFile), { recursive: true });
   const data: CronsFile = { version: 1, jobs };
-  writeFileSync(CRONS_FILE, JSON.stringify(data, null, 2), "utf-8");
+  writeFileSync(cronsFile, JSON.stringify(data, null, 2), "utf-8");
 }
 
 // --- CRUD ---
@@ -222,7 +222,7 @@ async function executeCronJob(job: CronJob): Promise<void> {
   const workingDir = job.workingDir ?? agent?.workingDir;
   const timeoutMs = job.timeoutMs ?? agent?.timeoutMs;
 
-  const logFile = resolve(RUNS_DIR, "logs", `${job.id}-${startMs}.log`);
+  const logFile = resolve(getCronRunsDir(), "logs", `${job.id}-${startMs}.log`);
 
   runningJobs.set(job.id, { startMs, logFile });
 
@@ -356,7 +356,7 @@ interface CronRunLogEntry {
 }
 
 function appendRunLog(jobId: string, entry: CronRunLogEntry): void {
-  const filePath = resolve(RUNS_DIR, `${jobId}.jsonl`);
+  const filePath = resolve(getCronRunsDir(), `${jobId}.jsonl`);
   mkdirSync(dirname(filePath), { recursive: true });
   appendFileSync(filePath, JSON.stringify(entry) + "\n", "utf-8");
 }

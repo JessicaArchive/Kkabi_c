@@ -1,44 +1,41 @@
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync, existsSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { join } from "node:path";
 import { getConfig } from "../config.js";
-
-const DATA_DIR = resolve(process.cwd(), "data");
-const MEMORY_DIR = join(DATA_DIR, "memory");
-const LOGS_DIR = join(MEMORY_DIR, "logs");
-const MEMORY_FILE = join(MEMORY_DIR, "MEMORY.md");
+import { getMemoryFile, getMemoryLogsDir } from "../paths.js";
 
 function ensureDirs(): void {
-  mkdirSync(LOGS_DIR, { recursive: true });
+  mkdirSync(getMemoryLogsDir(), { recursive: true });
 }
 
 export function readMemory(): string {
+  const memoryFile = getMemoryFile();
   ensureDirs();
-  if (!existsSync(MEMORY_FILE)) return "";
-  return readFileSync(MEMORY_FILE, "utf-8");
+  if (!existsSync(memoryFile)) return "";
+  return readFileSync(memoryFile, "utf-8");
 }
 
 export function writeMemory(content: string): void {
+  const memoryFile = getMemoryFile();
   ensureDirs();
-  writeFileSync(MEMORY_FILE, content, "utf-8");
+  writeFileSync(memoryFile, content, "utf-8");
 }
 
 export function appendMemory(line: string): void {
   ensureDirs();
   const current = readMemory();
   const updated = current ? `${current}\n${line}` : line;
-  writeFileSync(MEMORY_FILE, updated, "utf-8");
+  writeMemory(updated);
 }
 
 export function clearMemory(): void {
-  ensureDirs();
-  writeFileSync(MEMORY_FILE, "", "utf-8");
+  writeMemory("");
 }
 
 // Daily log
 
 function todayLogPath(): string {
   const date = new Date().toISOString().slice(0, 10);
-  return join(LOGS_DIR, `${date}.md`);
+  return join(getMemoryLogsDir(), `${date}.md`);
 }
 
 export function appendDailyLog(entry: string): void {
@@ -62,13 +59,14 @@ export function cleanOldLogs(): void {
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
 
   ensureDirs();
-  const files = readdirSync(LOGS_DIR).filter((f) => f.endsWith(".md"));
+  const logsDir = getMemoryLogsDir();
+  const files = readdirSync(logsDir).filter((f) => f.endsWith(".md"));
 
   for (const file of files) {
     const dateStr = file.replace(".md", "");
     const fileDate = new Date(dateStr).getTime();
     if (!isNaN(fileDate) && fileDate < cutoff) {
-      unlinkSync(join(LOGS_DIR, file));
+      unlinkSync(join(logsDir, file));
     }
   }
 }

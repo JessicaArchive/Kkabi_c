@@ -16,8 +16,7 @@ import {
   runQueueTask, startSequentialQueue, stopSequentialQueue,
   isSequentialRunning, getRunningQueueTasks,
 } from "../scheduler/taskQueue.js";
-
-const RUNS_DIR = resolve(process.cwd(), "data", "cron-runs");
+import { getCronRunsDir } from "../paths.js";
 
 export function createDashboardServer(port = 3000): void {
   const app = express();
@@ -77,13 +76,14 @@ export function createDashboardServer(port = 3000): void {
 
   // --- Runs ---
   app.get("/api/runs", (_req, res) => {
-    if (!existsSync(RUNS_DIR)) { res.json([]); return; }
+    const runsDir = getCronRunsDir();
+    if (!existsSync(runsDir)) { res.json([]); return; }
 
-    const files = readdirSync(RUNS_DIR).filter((f) => f.endsWith(".jsonl"));
+    const files = readdirSync(runsDir).filter((f) => f.endsWith(".jsonl"));
     const runs: Record<string, unknown>[] = [];
 
     for (const file of files) {
-      const content = readFileSync(resolve(RUNS_DIR, file), "utf-8");
+      const content = readFileSync(resolve(runsDir, file), "utf-8");
       for (const line of content.split("\n")) {
         if (!line.trim()) continue;
         try {
@@ -143,9 +143,10 @@ export function createDashboardServer(port = 3000): void {
 
   app.delete("/api/runs/:jobId/:ts", (req, res) => {
     const { jobId, ts } = req.params;
+    const runsDir = getCronRunsDir();
 
     // Remove from JSONL
-    const jsonlFile = resolve(RUNS_DIR, `${jobId}.jsonl`);
+    const jsonlFile = resolve(runsDir, `${jobId}.jsonl`);
     if (existsSync(jsonlFile)) {
       const lines = readFileSync(jsonlFile, "utf-8").split("\n").filter((line) => {
         if (!line.trim()) return false;
@@ -158,7 +159,7 @@ export function createDashboardServer(port = 3000): void {
     }
 
     // Remove log file if exists
-    const logFile = resolve(RUNS_DIR, "logs", `${jobId}-${ts}.log`);
+    const logFile = resolve(runsDir, "logs", `${jobId}-${ts}.log`);
     if (existsSync(logFile)) unlinkSync(logFile);
 
     res.json({ deleted: true });
@@ -166,7 +167,7 @@ export function createDashboardServer(port = 3000): void {
 
   app.get("/api/runs/:jobId/:ts", (req, res) => {
     const { jobId, ts } = req.params;
-    const logFile = resolve(RUNS_DIR, "logs", `${jobId}-${ts}.log`);
+    const logFile = resolve(getCronRunsDir(), "logs", `${jobId}-${ts}.log`);
 
     if (!existsSync(logFile)) {
       res.status(404).json({ error: "Log file not found" });

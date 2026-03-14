@@ -9,9 +9,7 @@ import { resolve, dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { ChannelType } from "../types.js";
 import { enqueue } from "../claude/queue.js";
-
-const QUEUE_FILE = resolve(process.cwd(), "data", "queue.json");
-const RUNS_DIR = resolve(process.cwd(), "data", "cron-runs");
+import { getCronRunsDir, getQueueFile } from "../paths.js";
 
 export interface QueueTask {
   id: string;
@@ -36,16 +34,18 @@ interface QueueFile {
 // --- Persistence ---
 
 function loadTasks(): QueueTask[] {
-  if (!existsSync(QUEUE_FILE)) return [];
-  const raw = readFileSync(QUEUE_FILE, "utf-8");
+  const queueFile = getQueueFile();
+  if (!existsSync(queueFile)) return [];
+  const raw = readFileSync(queueFile, "utf-8");
   const parsed = JSON.parse(raw);
   if (Array.isArray(parsed)) return parsed;
   return (parsed as QueueFile).tasks ?? [];
 }
 
 function saveTasks(tasks: QueueTask[]): void {
-  mkdirSync(dirname(QUEUE_FILE), { recursive: true });
-  writeFileSync(QUEUE_FILE, JSON.stringify({ version: 1, tasks } as QueueFile, null, 2), "utf-8");
+  const queueFile = getQueueFile();
+  mkdirSync(dirname(queueFile), { recursive: true });
+  writeFileSync(queueFile, JSON.stringify({ version: 1, tasks } as QueueFile, null, 2), "utf-8");
 }
 
 // --- CRUD ---
@@ -184,7 +184,7 @@ async function runSequential(tasks: QueueTask[]): Promise<void> {
 
 async function executeQueueTask(task: QueueTask): Promise<void> {
   const startMs = Date.now();
-  const logFile = resolve(RUNS_DIR, "logs", `queue-${task.id}-${startMs}.log`);
+  const logFile = resolve(getCronRunsDir(), "logs", `queue-${task.id}-${startMs}.log`);
 
   // Update status to running
   updateTaskStatus(task.id, "running");
@@ -262,7 +262,7 @@ interface RunLogEntry {
 }
 
 function appendRunLog(entry: RunLogEntry): void {
-  const filePath = resolve(RUNS_DIR, "queue-runs.jsonl");
+  const filePath = resolve(getCronRunsDir(), "queue-runs.jsonl");
   mkdirSync(dirname(filePath), { recursive: true });
   appendFileSync(filePath, JSON.stringify(entry) + "\n", "utf-8");
 }

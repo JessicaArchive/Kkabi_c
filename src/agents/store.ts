@@ -1,7 +1,8 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { dirname } from "node:path";
 import { z } from "zod";
 import type { Agent } from "../types.js";
+import { getAgentsFile } from "../paths.js";
 
 const AgentSchema = z.object({
   id: z.string().min(1),
@@ -17,17 +18,16 @@ const AgentsFileSchema = z.object({
   agents: z.array(AgentSchema),
 });
 
-const AGENTS_FILE = resolve(process.cwd(), "data", "agents.json");
-
 let cache: Agent[] | null = null;
 
 export function loadAgents(): Agent[] {
+  const agentsFile = getAgentsFile();
   if (cache) return cache;
-  if (!existsSync(AGENTS_FILE)) {
+  if (!existsSync(agentsFile)) {
     cache = [];
     return cache;
   }
-  const raw = readFileSync(AGENTS_FILE, "utf-8");
+  const raw = readFileSync(agentsFile, "utf-8");
   const parsed = AgentsFileSchema.parse(JSON.parse(raw));
   cache = parsed.agents;
   return cache;
@@ -63,8 +63,9 @@ export function reloadAgents(): Agent[] {
 }
 
 function writeAgents(agents: Agent[]): void {
-  mkdirSync(dirname(AGENTS_FILE), { recursive: true });
+  const agentsFile = getAgentsFile();
+  mkdirSync(dirname(agentsFile), { recursive: true });
   const data = { version: 1, agents };
-  writeFileSync(AGENTS_FILE, JSON.stringify(data, null, 2), "utf-8");
+  writeFileSync(agentsFile, JSON.stringify(data, null, 2), "utf-8");
   cache = agents;
 }

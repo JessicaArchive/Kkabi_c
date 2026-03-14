@@ -8,8 +8,7 @@ import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Server } from "node:http";
 import { buildPrompt } from "../claude/context.js";
-
-const SESSIONS_DIR = resolve(process.cwd(), "data", "chat-sessions");
+import { getChatSessionsDir, getPromptsDir } from "../paths.js";
 
 export interface ChatSession {
   id: string;
@@ -25,7 +24,7 @@ const activeProcs = new Map<string, import("node:child_process").ChildProcess>()
 const sessionCache = new Map<string, ChatSession>();
 
 export function setupChatWebSocket(server: Server): void {
-  mkdirSync(SESSIONS_DIR, { recursive: true });
+  mkdirSync(getChatSessionsDir(), { recursive: true });
 
   const wss = new WebSocketServer({ server, path: "/ws/chat" });
 
@@ -233,7 +232,7 @@ function sendMessage(ws: WebSocket, sessionId: string, text: string): void {
 function loadSession(id: string): ChatSession | null {
   const cached = sessionCache.get(id);
   if (cached) return cached;
-  const file = resolve(SESSIONS_DIR, `${id}.json`);
+  const file = resolve(getChatSessionsDir(), `${id}.json`);
   if (!existsSync(file)) return null;
   const session = JSON.parse(readFileSync(file, "utf-8"));
   sessionCache.set(id, session);
@@ -242,8 +241,9 @@ function loadSession(id: string): ChatSession | null {
 
 function saveSession(session: ChatSession): void {
   sessionCache.set(session.id, session);
-  mkdirSync(SESSIONS_DIR, { recursive: true });
-  const file = resolve(SESSIONS_DIR, `${session.id}.json`);
+  const sessionsDir = getChatSessionsDir();
+  mkdirSync(sessionsDir, { recursive: true });
+  const file = resolve(sessionsDir, `${session.id}.json`);
   writeFile(file, JSON.stringify(session, null, 2), "utf-8").catch((err) =>
     console.error(`[Chat] Failed to save session:`, err)
   );
@@ -252,10 +252,11 @@ function saveSession(session: ChatSession): void {
 // --- REST API helpers ---
 
 export function listSessions(): ChatSession[] {
-  mkdirSync(SESSIONS_DIR, { recursive: true });
-  const files = readdirSync(SESSIONS_DIR).filter((f) => f.endsWith(".json"));
+  const sessionsDir = getChatSessionsDir();
+  mkdirSync(sessionsDir, { recursive: true });
+  const files = readdirSync(sessionsDir).filter((f) => f.endsWith(".json"));
   return files.map((f) => {
-    const content = readFileSync(resolve(SESSIONS_DIR, f), "utf-8");
+    const content = readFileSync(resolve(sessionsDir, f), "utf-8");
     return JSON.parse(content) as ChatSession;
   }).sort((a, b) => b.updatedAt - a.updatedAt);
 }
@@ -270,7 +271,7 @@ export function renameSession(id: string, name: string): ChatSession | null {
 }
 
 export function deleteSession(id: string): boolean {
-  const file = resolve(SESSIONS_DIR, `${id}.json`);
+  const file = resolve(getChatSessionsDir(), `${id}.json`);
   if (!existsSync(file)) return false;
   unlinkSync(file);
   sessionCache.delete(id);
@@ -278,7 +279,7 @@ export function deleteSession(id: string): boolean {
 }
 
 export function getPromptFiles(): string[] {
-  const dir = resolve(process.cwd(), "data", "prompts");
+  const dir = getPromptsDir();
   if (!existsSync(dir)) return [];
   return readdirSync(dir).filter((f) => f.endsWith(".md"));
 }
@@ -286,7 +287,7 @@ export function getPromptFiles(): string[] {
 export function getPromptFileContent(filename: string): string | null {
   // Prevent path traversal
   if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) return null;
-  const file = resolve(process.cwd(), "data", "prompts", filename);
+  const file = resolve(getPromptsDir(), filename);
   if (!existsSync(file)) return null;
   return readFileSync(file, "utf-8");
 }

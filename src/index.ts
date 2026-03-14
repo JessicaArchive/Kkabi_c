@@ -1,4 +1,4 @@
-import { resolve, dirname } from "node:path";
+import { dirname } from "node:path";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { loadConfig } from "./config.js";
 import { initDb, closeDb } from "./db/store.js";
@@ -6,16 +6,16 @@ import { SlackChannel } from "./channels/slack.js";
 import { GitHubChannel } from "./channels/github.js";
 import { TelegramChannel } from "./channels/telegram.js";
 import { createHandler } from "./core/handler.js";
+import { syncWorkingDirFromConfig } from "./core/commands.js";
 import { startAllCrons, stopAllCrons, setCronSendCallback } from "./scheduler/cron.js";
 import { cleanOldLogs } from "./memory/manager.js";
 import { cancelCurrent } from "./claude/runner.js";
 import { createDashboardServer } from "./dashboard/server.js";
+import { getDbPath, getLocalOutputLogPath } from "./paths.js";
 import type { Channel } from "./channels/base.js";
 import type { ChannelType } from "./types.js";
 
 const channels = new Map<ChannelType, Channel>();
-
-const LOCAL_OUTPUT_LOG = resolve(process.cwd(), "data", "local-output.log");
 
 function getConfigPathFromArgs(argv: string[]): string | undefined {
   for (let i = 0; i < argv.length; i++) {
@@ -30,11 +30,12 @@ function getConfigPathFromArgs(argv: string[]): string | undefined {
 }
 
 function localSend(text: string): void {
+  const localOutputLog = getLocalOutputLogPath();
   const timestamp = new Date().toISOString();
   const line = `[${timestamp}] ${text}`;
   console.log(line);
-  mkdirSync(dirname(LOCAL_OUTPUT_LOG), { recursive: true });
-  appendFileSync(LOCAL_OUTPUT_LOG, line + "\n", "utf-8");
+  mkdirSync(dirname(localOutputLog), { recursive: true });
+  appendFileSync(localOutputLog, line + "\n", "utf-8");
 }
 
 async function main(): Promise<void> {
@@ -43,11 +44,11 @@ async function main(): Promise<void> {
   // Load config
   const configPath = getConfigPathFromArgs(process.argv.slice(2));
   const config = loadConfig(configPath);
+  syncWorkingDirFromConfig();
   console.log("[Config] Loaded");
 
   // Init DB
-  const dbPath = resolve(process.cwd(), "data", "kkabi.db");
-  initDb(dbPath);
+  initDb(getDbPath());
   console.log("[DB] Initialized");
 
   // Clean old logs

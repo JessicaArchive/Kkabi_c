@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import type { CommandResult, ChannelType } from "../types.js";
+import { getConfig } from "../config.js";
 import { getRecentConversation, getRecentExecutions } from "../db/store.js";
 import { readMemory, appendMemory, clearMemory } from "../memory/manager.js";
 import { loadPersona, updateSoul, updateUser, updateMood } from "../memory/persona.js";
@@ -18,6 +19,21 @@ import {
 import { loadAgents, getAgent, reloadAgents, saveAgent, removeAgent } from "../agents/store.js";
 
 let workingDir = process.env.HOME ?? process.cwd();
+
+function expandHome(path: string): string {
+  if (path === "~") {
+    return process.env.HOME ?? path;
+  }
+  if (path.startsWith("~/")) {
+    return path.replace(/^~/, process.env.HOME ?? "~");
+  }
+  return path;
+}
+
+export function syncWorkingDirFromConfig(): void {
+  const configured = getConfig().claude.workingDir;
+  workingDir = expandHome(configured);
+}
 
 export function getWorkingDir(): string {
   return workingDir;
