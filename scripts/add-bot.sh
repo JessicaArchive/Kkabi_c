@@ -57,11 +57,11 @@ cat > "$CONFIG_FILE" << EOF
   "dashboard": {
     "enabled": false
   },
-  "dataDir": "data-$NAME"
+  "dataDir": "$PROJECT_PATH/data"
 }
 EOF
 
 echo "Created config: $CONFIG_FILE"
 echo "Role: worker bot (project execution only)"
-echo "Data directory: data-$NAME/"
+echo "Data directory: $PROJECT_PATH/data/"
 echo "Start with: ./start-all.sh"
