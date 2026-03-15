@@ -28,6 +28,17 @@ export function filterIncoming(text: string, config: FilterConfig): FilterResult
     return { action: "ignore", reason: "own message" };
   }
 
+  // "to" 필드가 있으면 대상 확인
+  // "to" can be a provider type ("codex") or a specific bot username
+  if (botMsg.header.to) {
+    const to = botMsg.header.to;
+    const isForMe = to === config.myBotUsername || to === config.myProvider;
+    if (!isForMe) {
+      return { action: "ignore", reason: `addressed to ${to}, not me (${config.myBotUsername}/${config.myProvider})` };
+    }
+  }
+
+  // 메시지 타입 필터링
   // Codex는 review_request, review_reply만 처리
   if (config.myProvider === "codex") {
     if (botMsg.header.type !== "review_request" && botMsg.header.type !== "review_reply") {

@@ -16,7 +16,7 @@ import { createDashboardServer } from "./dashboard/server.js";
 import { getDbPath, getLocalOutputLogPath } from "./paths.js";
 import type { Channel } from "./channels/base.js";
 import { setQueueLimits } from "./claude/queue.js";
-import { loadBotRegistry } from "./interbot/registry.js";
+import { loadBotRegistry, registerBotUsername } from "./interbot/registry.js";
 import type { ChannelType } from "./types.js";
 
 const channels = new Map<ChannelType, Channel>();
@@ -94,10 +94,17 @@ async function main(): Promise<void> {
   if (config.channels.telegram?.enabled) {
     const telegram = new TelegramChannel(config.channels.telegram);
     await telegram.start();
-    const handler = createHandler(telegram, {
-      provider,
-      botUsername: telegram.getBotUsername(),
-    });
+    const botUsername = telegram.getBotUsername();
+
+    // Register this bot's username in the interbot registry
+    if (config.interbot?.enabled && botUsername) {
+      const resolvedConfigPath = configPath ?? "config.json";
+      const { resolve } = await import("node:path");
+      registerBotUsername(resolve(process.cwd(), resolvedConfigPath), botUsername);
+      console.log(`[Interbot] Registered @${botUsername}`);
+    }
+
+    const handler = createHandler(telegram, { provider, botUsername });
     telegram.onMessage(handler);
     channels.set("telegram", telegram);
   }

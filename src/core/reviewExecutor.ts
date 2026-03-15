@@ -28,14 +28,21 @@ export async function executeReviewRequests(
   const results: ReviewExecutionResult[] = [];
 
   for (const req of requests) {
-    // sender workingDir 검증
+    // Fix 2: sender workingDir 검증 — 실패 시 거부
     if (!validateSenderWorkingDir(botUsername, req.workingDir)) {
-      console.log(`[Review] workingDir validation skipped for ${botUsername} (not in registry or mismatch)`);
+      console.warn(`[Review] REJECTED: workingDir mismatch for ${botUsername} (claimed: ${req.workingDir})`);
+      results.push({
+        success: false,
+        message: `workingDir mismatch: ${botUsername} is not registered for ${req.workingDir}`,
+      });
+      continue;
     }
 
+    // Fix 4: from은 항상 현재 봇의 username을 사용 (태그의 from은 무시)
     const reqId = generateReqId(botUsername);
     const header: BotMsgHeader = {
       from: botUsername,
+      to: "codex",  // Fix 3: 대상 식별
       type: "review_request",
       reqId,
     };

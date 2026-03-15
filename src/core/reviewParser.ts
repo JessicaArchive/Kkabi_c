@@ -1,5 +1,5 @@
 export interface ReviewRequest {
-  from: string;
+  from?: string;  // optional — system fills in the sender identity
   workingDir: string;
   type: string;
   summary: string;
@@ -20,7 +20,7 @@ export function parseReviewTags(response: string): ReviewParseResult {
   for (const match of response.matchAll(REVIEW_REQUEST_RE)) {
     try {
       const payload = JSON.parse(match[1]) as ReviewRequest;
-      if (payload.from && payload.workingDir && payload.summary) {
+      if (payload.workingDir && payload.summary) {
         requests.push(payload);
       }
     } catch {

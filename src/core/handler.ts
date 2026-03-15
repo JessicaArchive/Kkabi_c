@@ -13,6 +13,7 @@ import { executeCronActions } from "./cronExecutor.js";
 import { filterIncoming, type FilterConfig } from "../interbot/filter.js";
 import { parseReviewTags } from "./reviewParser.js";
 import { executeReviewRequests } from "./reviewExecutor.js";
+import type { BotMsg } from "../interbot/protocol.js";
 
 function resolveWorkingDir(chatId: string, channelType: ChannelType): string | undefined {
   const config = getConfig();
@@ -34,6 +35,34 @@ function resolveWorkingDir(chatId: string, channelType: ChannelType): string | u
   return undefined;
 }
 
+/**
+ * Build a review-specific prompt from a BOT_MSG body.
+ * Gives the provider clear context about what to review and where.
+ */
+function buildReviewPrompt(botMsg: BotMsg): string {
+  const { body, header } = botMsg;
+  const summary = body.summary as string ?? "";
+  const files = (body.files as string[] ?? []).join(", ");
+  const branch = body.branch as string ?? "";
+  const workingDir = body.workingDir as string ?? "";
+
+  const parts: string[] = [];
+  parts.push(`[CODE REVIEW REQUEST from ${header.from}]`);
+  parts.push(`Request ID: ${header.reqId}`);
+  parts.push(`Working directory: ${workingDir}`);
+  if (branch) parts.push(`Branch: ${branch}`);
+  if (files) parts.push(`Files changed: ${files}`);
+  parts.push(`Summary: ${summary}`);
+  parts.push("");
+  parts.push("Please review the changes described above. Check the actual files and git diff in the working directory.");
+  parts.push("Focus on: bugs, edge cases, security issues, performance problems.");
+  parts.push("Be concise and constructive.");
+  parts.push("");
+  parts.push(`When you respond, format your response as a review. Your response will be sent back to ${header.from}.`);
+
+  return parts.join("\n");
+}
+
 export interface HandlerOptions {
   provider?: ProviderType;
   botUsername?: string;
@@ -46,6 +75,8 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
 
     // Interbot message filtering (loop prevention)
     const config = getConfig();
+    let reviewBotMsg: BotMsg | undefined;
+
     if (config.interbot?.enabled && options?.botUsername) {
       const filterConfig: FilterConfig = {
         myBotUsername: options.botUsername,
@@ -56,13 +87,12 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
         return;
       }
       if (filterResult.action === "process_review" && filterResult.botMsg) {
-        // Review message — extract workingDir from body for provider execution
-        const reviewWorkingDir = filterResult.botMsg.body.workingDir as string | undefined;
-        if (reviewWorkingDir) {
-          // Override workingDir so the provider runs in the correct project directory
-          msg = { ...msg, text: text };
-          // The workingDir will be resolved below via the review body
+        // Fix 3: check "to" field — only process if addressed to me
+        const to = filterResult.botMsg.header.to;
+        if (to && to !== options.botUsername) {
+          return; // not addressed to me
         }
+        reviewBotMsg = filterResult.botMsg;
       }
     }
 
@@ -89,32 +119,44 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
     });
     appendDailyLog(`[${senderName}] ${text.slice(0, 100)}`);
 
-    // Command handling
-    if (isCommand(text)) {
+    // Command handling (skip for review messages)
+    if (!reviewBotMsg && isCommand(text)) {
       const result = await executeCommand(text, chatId, msg.channel);
       await channel.sendText(chatId, result.text, threadId);
       return;
     }
 
-    // Safety check
-    const safety = checkSafety(text);
-    if (!safety.safe) {
-      const approved = await requestApproval(
-        channel,
-        chatId,
-        text,
-        safety.matchedKeywords,
-        threadId,
-      );
-      if (!approved) {
-        await channel.sendText(chatId, "Request denied.", threadId);
-        return;
+    // Safety check (skip for review messages — they are system-generated)
+    if (!reviewBotMsg) {
+      const safety = checkSafety(text);
+      if (!safety.safe) {
+        const approved = await requestApproval(
+          channel,
+          chatId,
+          text,
+          safety.matchedKeywords,
+          threadId,
+        );
+        if (!approved) {
+          await channel.sendText(chatId, "Request denied.", threadId);
+          return;
+        }
       }
     }
 
-    // Build prompt and enqueue
-    const prompt = buildPrompt(text, chatId);
-    const workingDir = resolveWorkingDir(chatId, msg.channel);
+    // Build prompt and resolve workingDir
+    let prompt: string;
+    let workingDir: string | undefined;
+
+    if (reviewBotMsg) {
+      // Fix 1: use review body's workingDir and build review-specific prompt
+      prompt = buildReviewPrompt(reviewBotMsg);
+      workingDir = reviewBotMsg.body.workingDir as string | undefined;
+    } else {
+      prompt = buildPrompt(text, chatId);
+      workingDir = resolveWorkingDir(chatId, msg.channel);
+    }
+
     const { promise, position } = enqueue({ prompt, chatId, channel: msg.channel, workingDir, provider });
 
     if (position > 1) {
@@ -142,7 +184,7 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
         return;
       }
 
-      // Post-process cron tags from Claude's response
+      // Post-process cron tags from response
       let response = result.output || "(empty response)";
       const { actions, cleanedResponse } = parseCronTags(response);
 
@@ -150,7 +192,6 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
         const cronResults = executeCronActions(actions, msg.channel, chatId);
         response = cleanedResponse;
 
-        // Append cron result messages
         const extras: string[] = [];
         for (const r of cronResults) {
           if (!r.success) {
