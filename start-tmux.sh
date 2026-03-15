@@ -101,6 +101,8 @@ cmd_start() {
       [ -f "$config" ] || continue
       local name
       name="$(basename "$config" .json)"
+      # codex는 내장 provider — 별도 봇으로 띄우지 않음
+      [[ "$name" == "codex" ]] && continue
       local worker_cmd
       worker_cmd="$(make_restart_cmd "$name" "npx tsx src/index.ts --config '$config'")"
       tmux new-window -a -t "$SESSION" -n "$name" "$worker_cmd"
