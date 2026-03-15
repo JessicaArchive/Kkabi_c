@@ -15,7 +15,7 @@ export class CodexProvider implements Provider {
     const raw = workingDir ?? runner.workingDir;
     const cwd = raw.startsWith("~") ? raw.replace(/^~/, process.env.HOME ?? "") : raw;
 
-    const args = ["exec", prompt, "--json", "-s", "read-only"];
+    const args = ["exec", prompt, "--json", "-s", "read-only", "--skip-git-repo-check"];
     if (model) args.push("-m", model);
 
     const proc = spawn("codex", args, {
