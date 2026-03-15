@@ -1,6 +1,7 @@
 import { dirname } from "node:path";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { loadConfig } from "./config.js";
+import { getDataPath } from "./paths.js";
 import { initDb, closeDb } from "./db/store.js";
 import { SlackChannel } from "./channels/slack.js";
 import { GitHubChannel } from "./channels/github.js";
@@ -124,6 +125,35 @@ function shutdown(signal: string): void {
 
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+// Crash protection: log errors instead of dying silently
+function logCrash(type: string, err: unknown): void {
+  const timestamp = new Date().toISOString();
+  const message = err instanceof Error
+    ? `${err.message}\n${err.stack}`
+    : String(err);
+  const line = `[${timestamp}] [${type}] ${message}\n`;
+
+  console.error(line);
+
+  try {
+    const crashLog = getDataPath("crash.log");
+    mkdirSync(dirname(crashLog), { recursive: true });
+    appendFileSync(crashLog, line, "utf-8");
+  } catch {
+    // If we can't write the log, at least stderr got it
+  }
+}
+
+process.on("uncaughtException", (err) => {
+  logCrash("uncaughtException", err);
+  // Don't exit — keep the bot alive
+});
+
+process.on("unhandledRejection", (reason) => {
+  logCrash("unhandledRejection", reason);
+  // Don't exit — keep the bot alive
+});
 
 main().catch((err) => {
   console.error("Fatal error:", err);
