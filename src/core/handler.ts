@@ -10,6 +10,7 @@ import { appendDailyLog } from "../memory/manager.js";
 import { isFirstTime, isInSetup, startOnboarding, handleOnboardingStep } from "./onboarding.js";
 import { parseCronTags } from "./cronParser.js";
 import { executeCronActions } from "./cronExecutor.js";
+import { filterIncoming, type FilterConfig } from "../interbot/filter.js";
 
 function resolveWorkingDir(chatId: string, channelType: ChannelType): string | undefined {
   const config = getConfig();
@@ -40,6 +41,23 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
   const provider = options?.provider ?? "claude";
   return async (msg: IncomingMessage): Promise<void> => {
     const { chatId, text, threadId, senderName } = msg;
+
+    // Interbot message filtering (loop prevention)
+    const config = getConfig();
+    if (config.interbot?.enabled && options?.botUsername) {
+      const filterConfig: FilterConfig = {
+        myBotUsername: options.botUsername,
+        myProvider: provider,
+      };
+      const filterResult = filterIncoming(text, filterConfig);
+      if (filterResult.action === "ignore") {
+        return;
+      }
+      if (filterResult.action === "process_review" && filterResult.botMsg) {
+        // TODO: Phase B — handle review messages (Task 13)
+        // For now, just process as normal text so Codex/Claude can respond
+      }
+    }
 
     // First-time onboarding
     if (isFirstTime() && !isInSetup(chatId)) {

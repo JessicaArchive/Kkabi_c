@@ -16,6 +16,7 @@ import { createDashboardServer } from "./dashboard/server.js";
 import { getDbPath, getLocalOutputLogPath } from "./paths.js";
 import type { Channel } from "./channels/base.js";
 import { setQueueLimits } from "./claude/queue.js";
+import { loadBotRegistry } from "./interbot/registry.js";
 import type { ChannelType } from "./types.js";
 
 const channels = new Map<ChannelType, Channel>();
@@ -59,6 +60,12 @@ async function main(): Promise<void> {
   );
 
   console.log(`[Config] Loaded (provider: ${provider})`);
+
+  // Load bot registry for interbot validation
+  if (config.interbot?.enabled) {
+    loadBotRegistry();
+    console.log("[Interbot] Bot registry loaded");
+  }
 
   // Init DB
   initDb(getDbPath());
