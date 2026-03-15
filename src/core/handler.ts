@@ -11,6 +11,8 @@ import { isFirstTime, isInSetup, startOnboarding, handleOnboardingStep } from ".
 import { parseCronTags } from "./cronParser.js";
 import { executeCronActions } from "./cronExecutor.js";
 import { filterIncoming, type FilterConfig } from "../interbot/filter.js";
+import { parseReviewTags } from "./reviewParser.js";
+import { executeReviewRequests } from "./reviewExecutor.js";
 
 function resolveWorkingDir(chatId: string, channelType: ChannelType): string | undefined {
   const config = getConfig();
@@ -54,8 +56,13 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
         return;
       }
       if (filterResult.action === "process_review" && filterResult.botMsg) {
-        // TODO: Phase B — handle review messages (Task 13)
-        // For now, just process as normal text so Codex/Claude can respond
+        // Review message — extract workingDir from body for provider execution
+        const reviewWorkingDir = filterResult.botMsg.body.workingDir as string | undefined;
+        if (reviewWorkingDir) {
+          // Override workingDir so the provider runs in the correct project directory
+          msg = { ...msg, text: text };
+          // The workingDir will be resolved below via the review body
+        }
       }
     }
 
@@ -154,6 +161,26 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
         }
         if (extras.length > 0) {
           response = response + "\n\n" + extras.join("\n");
+        }
+      }
+
+      // Post-process review tags (send review requests to group chat)
+      if (config.interbot?.enabled && options?.botUsername) {
+        const { requests: reviewRequests, cleanedResponse: reviewCleaned } = parseReviewTags(response);
+        if (reviewRequests.length > 0) {
+          response = reviewCleaned;
+          const reviewResults = await executeReviewRequests(reviewRequests, channel, options.botUsername);
+          const extras: string[] = [];
+          for (const r of reviewResults) {
+            if (r.success) {
+              extras.push(`Code review requested (${r.reqId?.slice(0, 20)})`);
+            } else {
+              extras.push(`Review failed: ${r.message}`);
+            }
+          }
+          if (extras.length > 0) {
+            response = response + "\n\n" + extras.join("\n");
+          }
         }
       }
 
