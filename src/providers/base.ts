@@ -13,10 +13,12 @@ export interface RunResult {
   timedOut: boolean;
 }
 
+export interface RunHandle {
+  promise: Promise<RunResult>;
+  cancel: () => void;
+}
+
 export interface Provider {
   readonly name: string;
-  run(options: RunOptions): Promise<RunResult>;
-  cancel(): boolean;
-  isRunning(): boolean;
-  getCurrentPromptId(): string | null;
+  run(options: RunOptions): RunHandle;
 }
