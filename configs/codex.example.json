@@ -4,7 +4,11 @@
     "telegram": {
       "enabled": true,
       "botToken": "<CODEX_BOT_TOKEN_FROM_BOTFATHER>",
-      "allowedChatIds": [8252879179]
+      "allowedChatIds": [
+        8252879179,
+        -100TRADING_GROUP_ID,
+        -100VC_GROUP_ID
+      ]
     }
   },
   "runner": {
@@ -19,7 +23,6 @@
   "dashboard": { "enabled": false },
   "dataDir": "~/Kkabi_c/data-codex",
   "interbot": {
-    "enabled": true,
-    "groupChatId": -1234567890
+    "enabled": true
   }
 }
