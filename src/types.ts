@@ -44,6 +44,7 @@ export interface QueueItem {
   prompt: string;
   chatId: string;
   channel: ChannelType;
+  provider?: ProviderType;
   workingDir?: string;
   model?: string;
   timeoutMs?: number;
