@@ -13,7 +13,7 @@ import { executeCronActions } from "./cronExecutor.js";
 import { filterIncoming, type FilterConfig } from "../interbot/filter.js";
 import { parseReviewTags } from "./reviewParser.js";
 import { executeReviewRequests } from "./reviewExecutor.js";
-import type { BotMsg } from "../interbot/protocol.js";
+import { buildBotMsg, type BotMsg, type BotMsgHeader } from "../interbot/protocol.js";
 
 function resolveWorkingDir(chatId: string, channelType: ChannelType): string | undefined {
   const config = getConfig();
@@ -225,7 +225,26 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
         }
       }
 
-      await channel.sendText(chatId, response, threadId);
+      // If this was a review request, wrap response as BOT_MSG review_response
+      if (reviewBotMsg && config.interbot?.enabled && options?.botUsername) {
+        const groupChatId = config.interbot.groupChatId;
+        if (groupChatId) {
+          const responseHeader: BotMsgHeader = {
+            from: options.botUsername,
+            to: reviewBotMsg.header.from, // send back to the requesting bot
+            type: "review_response",
+            reqId: reviewBotMsg.header.reqId,
+          };
+          const responseBody = {
+            review: response,
+            workingDir: reviewBotMsg.body.workingDir,
+          };
+          const botMsgText = buildBotMsg(responseHeader, responseBody);
+          await channel.sendText(String(groupChatId), botMsgText, threadId);
+        }
+      } else {
+        await channel.sendText(chatId, response, threadId);
+      }
 
       // Save conversation
       saveMessage({
