@@ -272,9 +272,10 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
       }
 
       // If this was a review message, wrap response as structured BOT_MSG
+      // Reply to the same chat the message came from (supports per-project groups)
       if (reviewBotMsg && config.interbot?.enabled && options?.botUsername) {
-        const groupChatId = config.interbot.groupChatId;
-        if (groupChatId) {
+        const replyChatId = chatId; // use incoming chatId, not config groupChatId
+        {
           // Determine reply type based on incoming message type:
           // review_request/review_reply → respond with review_response
           // review_response → respond with review_reply (keeps same reqId)
@@ -293,10 +294,10 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
             workingDir: reviewBotMsg.body.workingDir,
           };
           const botMsgText = buildBotMsg(responseHeader, responseBody);
-          await channel.sendText(String(groupChatId), botMsgText, threadId);
+          await channel.sendText(replyChatId, botMsgText, threadId);
 
           // Log outgoing review message
-          appendGroupChatLog(String(groupChatId), {
+          appendGroupChatLog(replyChatId, {
             ts: new Date().toISOString(),
             bot: options.botUsername,
             role: "bot",
