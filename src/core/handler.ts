@@ -1,5 +1,5 @@
 import type { Channel } from "../channels/base.js";
-import type { ChannelType, IncomingMessage } from "../types.js";
+import type { ChannelType, IncomingMessage, ProviderType } from "../types.js";
 import { isCommand, executeCommand } from "./commands.js";
 import { buildPrompt } from "../claude/context.js";
 import { enqueue } from "../claude/queue.js";
@@ -10,6 +10,10 @@ import { appendDailyLog } from "../memory/manager.js";
 import { isFirstTime, isInSetup, startOnboarding, handleOnboardingStep } from "./onboarding.js";
 import { parseCronTags } from "./cronParser.js";
 import { executeCronActions } from "./cronExecutor.js";
+import { filterIncoming, type FilterConfig } from "../interbot/filter.js";
+import { parseReviewTags } from "./reviewParser.js";
+import { executeReviewRequests } from "./reviewExecutor.js";
+import { appendGroupChatLog } from "../interbot/log.js";
 
 function resolveWorkingDir(chatId: string, channelType: ChannelType): string | undefined {
   const config = getConfig();
@@ -31,9 +35,29 @@ function resolveWorkingDir(chatId: string, channelType: ChannelType): string | u
   return undefined;
 }
 
-export function createHandler(channel: Channel) {
+export interface HandlerOptions {
+  provider?: ProviderType;
+  botUsername?: string;
+}
+
+export function createHandler(channel: Channel, options?: HandlerOptions) {
+  const provider = options?.provider ?? "claude";
   return async (msg: IncomingMessage): Promise<void> => {
     const { chatId, text, threadId, senderName } = msg;
+
+    // Interbot: BOT_MSG 메시지는 무시 (Codex 리뷰는 내부 enqueue로 처리)
+    const config = getConfig();
+
+    if (config.interbot?.enabled && options?.botUsername) {
+      const filterConfig: FilterConfig = {
+        myBotUsername: options.botUsername,
+        myProvider: provider,
+      };
+      const filterResult = filterIncoming(text, filterConfig);
+      if (filterResult.action === "ignore" || filterResult.action === "process_review") {
+        return;
+      }
+    }
 
     // First-time onboarding
     if (isFirstTime() && !isInSetup(chatId)) {
@@ -41,8 +65,6 @@ export function createHandler(channel: Channel) {
       saveMessage({ role: "user", content: text, channel: msg.channel, chatId, timestamp: msg.timestamp });
       return;
     }
-
-    // Onboarding in progress
     if (isInSetup(chatId)) {
       const handled = await handleOnboardingStep(channel, chatId, text);
       if (handled) return;
@@ -57,6 +79,18 @@ export function createHandler(channel: Channel) {
       timestamp: msg.timestamp,
     });
     appendDailyLog(`[${senderName}] ${text.slice(0, 100)}`);
+
+    // Log group chat messages
+    if (config.interbot?.enabled && config.interbot.groupChatId &&
+        String(config.interbot.groupChatId) === chatId) {
+      appendGroupChatLog(chatId, {
+        ts: new Date().toISOString(),
+        bot: options?.botUsername ?? "unknown",
+        role: "user",
+        from: senderName,
+        text: text.slice(0, 500),
+      });
+    }
 
     // Command handling
     if (isCommand(text)) {
@@ -81,10 +115,11 @@ export function createHandler(channel: Channel) {
       }
     }
 
-    // Build prompt and enqueue
+    // Build prompt and resolve workingDir
     const prompt = buildPrompt(text, chatId);
     const workingDir = resolveWorkingDir(chatId, msg.channel);
-    const { promise, position } = enqueue({ prompt, chatId, channel: msg.channel, workingDir });
+
+    const { promise, position } = enqueue({ prompt, chatId, channel: msg.channel, workingDir, provider });
 
     if (position > 1) {
       await channel.sendText(chatId, `Waiting in queue... (position ${position})`, threadId);
@@ -111,7 +146,7 @@ export function createHandler(channel: Channel) {
         return;
       }
 
-      // Post-process cron tags from Claude's response
+      // Post-process cron tags from response
       let response = result.output || "(empty response)";
       const { actions, cleanedResponse } = parseCronTags(response);
 
@@ -119,7 +154,6 @@ export function createHandler(channel: Channel) {
         const cronResults = executeCronActions(actions, msg.channel, chatId);
         response = cleanedResponse;
 
-        // Append cron result messages
         const extras: string[] = [];
         for (const r of cronResults) {
           if (!r.success) {
@@ -130,6 +164,51 @@ export function createHandler(channel: Channel) {
         }
         if (extras.length > 0) {
           response = response + "\n\n" + extras.join("\n");
+        }
+      }
+
+      // Post-process review tags (send review requests to group chat)
+      if (config.interbot?.enabled && options?.botUsername) {
+        const { requests: reviewRequests, cleanedResponse: reviewCleaned } = parseReviewTags(response);
+        if (reviewRequests.length > 0) {
+          response = reviewCleaned;
+          const reviewResults = await executeReviewRequests(reviewRequests, channel, options.botUsername);
+          const extras: string[] = [];
+          for (const r of reviewResults) {
+            if (r.success) {
+              extras.push(`Code review requested (${r.reqId?.slice(0, 20)})`);
+            } else {
+              extras.push(`Review failed: ${r.message}`);
+            }
+          }
+          if (extras.length > 0) {
+            response = response + "\n\n" + extras.join("\n");
+          }
+        }
+
+        // Auto-review: if code-modifying tools were used, automatically request review
+        const CODE_TOOLS = ["Write", "Edit", "NotebookEdit"];
+        const usedCodeTools = (result.toolsUsed ?? []).filter((t) => CODE_TOOLS.includes(t));
+        if (usedCodeTools.length > 0 && reviewRequests.length === 0) {
+          const runnerConfig = config.runner ?? config.claude;
+          const autoReviewResults = await executeReviewRequests(
+            [{
+              workingDir: workingDir ?? runnerConfig.workingDir,
+              type: "code_change",
+              summary: `Auto-review: ${usedCodeTools.join(", ")} used. ${text.slice(0, 100)}`,
+            }],
+            channel,
+            options.botUsername,
+          );
+          const extras: string[] = [];
+          for (const r of autoReviewResults) {
+            if (r.success) {
+              extras.push(`Auto review requested (${r.reqId?.slice(0, 20)})`);
+            }
+          }
+          if (extras.length > 0) {
+            response = response + "\n\n" + extras.join("\n");
+          }
         }
       }
 

@@ -15,6 +15,8 @@ import { cancelCurrent } from "./claude/runner.js";
 import { createDashboardServer } from "./dashboard/server.js";
 import { getDbPath, getLocalOutputLogPath } from "./paths.js";
 import type { Channel } from "./channels/base.js";
+import { setQueueLimits } from "./claude/queue.js";
+import { loadBotRegistry, registerBotUsername } from "./interbot/registry.js";
 import type { ChannelType } from "./types.js";
 
 const channels = new Map<ChannelType, Channel>();
@@ -48,7 +50,22 @@ async function main(): Promise<void> {
   const config = loadConfig(configPath);
   syncWorkingDirFromConfig();
   initProjectCommands(getWorkingDir(), config.projectType);
-  console.log("[Config] Loaded");
+  const provider = config.provider ?? "claude";
+
+  // Set queue limits from runner config
+  const runner = config.runner ?? config.claude;
+  setQueueLimits(
+    runner.maxConcurrent,
+    (config.runner as any)?.maxPerWorkingDir ?? 1,
+  );
+
+  console.log(`[Config] Loaded (provider: ${provider})`);
+
+  // Load bot registry for interbot validation
+  if (config.interbot?.enabled) {
+    loadBotRegistry();
+    console.log("[Interbot] Bot registry loaded");
+  }
 
   // Init DB
   initDb(getDbPath());
@@ -76,9 +93,19 @@ async function main(): Promise<void> {
 
   if (config.channels.telegram?.enabled) {
     const telegram = new TelegramChannel(config.channels.telegram);
-    const handler = createHandler(telegram);
-    telegram.onMessage(handler);
     await telegram.start();
+    const botUsername = telegram.getBotUsername();
+
+    // Register this bot's username in the interbot registry
+    if (config.interbot?.enabled && botUsername) {
+      const resolvedConfigPath = configPath ?? "config.json";
+      const { resolve } = await import("node:path");
+      registerBotUsername(resolve(process.cwd(), resolvedConfigPath), botUsername);
+      console.log(`[Interbot] Registered @${botUsername}`);
+    }
+
+    const handler = createHandler(telegram, { provider, botUsername });
+    telegram.onMessage(handler);
     channels.set("telegram", telegram);
   }
 

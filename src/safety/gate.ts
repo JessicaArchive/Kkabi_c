@@ -13,9 +13,17 @@ export function checkSafety(text: string): SafetyCheckResult {
   }
 
   const lower = text.toLowerCase();
-  const matchedKeywords = config.safety.keywords.filter((kw) =>
-    lower.includes(kw.toLowerCase()),
-  );
+  const isAscii = (s: string): boolean => /^[\x00-\x7F]+$/.test(s);
+  const matchedKeywords = config.safety.keywords.filter((kw) => {
+    const kwLower = kw.toLowerCase();
+    if (isAscii(kwLower)) {
+      // ASCII: \b 단어 경계로 부분 문자열 방지 ("format" 안의 "rm" 무시)
+      const pattern = new RegExp(`\\b${kwLower.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
+      return pattern.test(lower);
+    }
+    // 비ASCII (한국어 등): includes로 매칭 ("삭제 해줘"에서 "삭제" 감지)
+    return lower.includes(kwLower);
+  });
 
   return {
     safe: matchedKeywords.length === 0,

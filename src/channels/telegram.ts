@@ -9,6 +9,7 @@ const MAX_TEXT_LENGTH = 4096;
 export class TelegramChannel implements Channel {
   readonly type: ChannelType = "telegram";
   private bot: Telegraf;
+  private botUsername = "";
   private handler: ((msg: IncomingMessage) => Promise<void>) | null = null;
   private pendingConfirms = new Map<string, (approved: boolean) => void>();
   private typingIntervals = new Map<string, ReturnType<typeof setInterval>>();
@@ -82,9 +83,15 @@ export class TelegramChannel implements Channel {
   }
 
   async start(): Promise<void> {
+    const botInfo = await this.bot.telegram.getMe();
+    this.botUsername = botInfo.username ?? "";
     // launch() never resolves (it keeps polling), so don't await it
     this.bot.launch({ dropPendingUpdates: true });
-    console.log("[Telegram] Bot started (polling)");
+    console.log(`[Telegram] Bot started: @${this.botUsername}`);
+  }
+
+  getBotUsername(): string {
+    return this.botUsername;
   }
 
   async stop(): Promise<void> {

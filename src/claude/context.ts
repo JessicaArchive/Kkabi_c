@@ -3,6 +3,7 @@ import { readMemory } from "../memory/manager.js";
 import { loadPersona, getLang } from "../memory/persona.js";
 import { listCrons } from "../scheduler/cron.js";
 import { loadAgents } from "../agents/store.js";
+import { getConfig } from "../config.js";
 
 export function buildPrompt(userMessage: string, chatId: string): string {
   const parts: string[] = [];
@@ -107,6 +108,20 @@ function buildCapabilitiesSection(chatId: string): string {
     lines.push("- Respond in Korean.");
   }
   lines.push("");
+
+  // Code review capability (only when interbot is enabled and provider is claude)
+  const appConfig = getConfig();
+  if (appConfig.interbot?.enabled && (appConfig.provider ?? "claude") === "claude") {
+    lines.push("## Code Review (IMPORTANT)");
+    lines.push("You have an automated code review system. Do NOT use debate scripts or other tools for code review.");
+    lines.push("Instead, when you make code changes OR when the user asks for a review, include this hidden tag at the END of your response:");
+    lines.push('  <!--REVIEW_REQUEST:{"workingDir":"~/kkabi-trading","type":"code_change","summary":"added format_price utility","files":["utils/formatting.py"],"branch":"feature/format-price"}-->');
+    lines.push("The system will automatically send this to the Codex review bot. You do NOT need to run any scripts.");
+    lines.push("Replace the example values with actual values from your work.");
+    lines.push("Do NOT request review for: simple questions, status checks, or config lookups.");
+    lines.push("ALWAYS include a natural language summary before the tag.");
+    lines.push("");
+  }
 
   // Available agents
   const agents = loadAgents();

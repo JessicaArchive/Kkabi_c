@@ -1,5 +1,7 @@
 export type ChannelType = "slack" | "github" | "gchat" | "telegram" | "local";
 
+export type ProviderType = "claude" | "codex";
+
 export interface IncomingMessage {
   id: string;
   channel: ChannelType;
@@ -35,6 +37,7 @@ export interface ClaudeResult {
   output: string;
   error?: string;
   timedOut: boolean;
+  toolsUsed?: string[];
 }
 
 export interface QueueItem {
@@ -42,6 +45,7 @@ export interface QueueItem {
   prompt: string;
   chatId: string;
   channel: ChannelType;
+  provider?: ProviderType;
   workingDir?: string;
   model?: string;
   timeoutMs?: number;
