@@ -13,7 +13,8 @@ import { executeCronActions } from "./cronExecutor.js";
 import { filterIncoming, type FilterConfig } from "../interbot/filter.js";
 import { parseReviewTags } from "./reviewParser.js";
 import { executeReviewRequests } from "./reviewExecutor.js";
-import { buildBotMsg, type BotMsg, type BotMsgHeader } from "../interbot/protocol.js";
+import { buildBotMsg, parseBotMsg, type BotMsg, type BotMsgHeader } from "../interbot/protocol.js";
+import { appendGroupChatLog } from "../interbot/log.js";
 
 function resolveWorkingDir(chatId: string, channelType: ChannelType): string | undefined {
   const config = getConfig();
@@ -118,6 +119,21 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
       timestamp: msg.timestamp,
     });
     appendDailyLog(`[${senderName}] ${text.slice(0, 100)}`);
+
+    // Log to group chat JSONL if this is from the interbot group
+    if (config.interbot?.enabled && config.interbot.groupChatId &&
+        String(config.interbot.groupChatId) === chatId) {
+      const incomingBotMsg = parseBotMsg(text);
+      appendGroupChatLog(chatId, {
+        ts: new Date().toISOString(),
+        bot: options?.botUsername ?? "unknown",
+        role: incomingBotMsg ? "bot" : "user",
+        from: senderName,
+        type: incomingBotMsg?.header.type,
+        reqId: incomingBotMsg?.header.reqId,
+        text: text.slice(0, 500),
+      });
+    }
 
     // Command handling (skip for review messages)
     if (!reviewBotMsg && isCommand(text)) {
@@ -241,6 +257,17 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
           };
           const botMsgText = buildBotMsg(responseHeader, responseBody);
           await channel.sendText(String(groupChatId), botMsgText, threadId);
+
+          // Log outgoing review response
+          appendGroupChatLog(String(groupChatId), {
+            ts: new Date().toISOString(),
+            bot: options.botUsername,
+            role: "bot",
+            from: options.botUsername,
+            type: "review_response",
+            reqId: reviewBotMsg.header.reqId,
+            text: response.slice(0, 500),
+          });
         }
       } else {
         await channel.sendText(chatId, response, threadId);

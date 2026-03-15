@@ -2,6 +2,7 @@ import type { Channel } from "../channels/base.js";
 import type { ReviewRequest } from "./reviewParser.js";
 import { buildBotMsg, generateReqId, type BotMsgHeader } from "../interbot/protocol.js";
 import { validateSenderWorkingDir } from "../interbot/registry.js";
+import { appendGroupChatLog } from "../interbot/log.js";
 import { getConfig } from "../config.js";
 
 export interface ReviewExecutionResult {
@@ -59,6 +60,18 @@ export async function executeReviewRequests(
     try {
       await channel.sendText(String(groupChatId), message);
       console.log(`[Review] Sent review request ${reqId} to group ${groupChatId}`);
+
+      // Log to group chat JSONL
+      appendGroupChatLog(String(groupChatId), {
+        ts: new Date().toISOString(),
+        bot: botUsername,
+        role: "bot",
+        from: botUsername,
+        type: "review_request",
+        reqId,
+        text: req.summary.slice(0, 500),
+      });
+
       results.push({ success: true, message: `Review requested: ${reqId.slice(0, 20)}`, reqId });
     } catch (err) {
       console.error(`[Review] Failed to send review request:`, err);
