@@ -3,11 +3,11 @@
   "channels": {
     "telegram": {
       "enabled": true,
-      "botToken": "<CODEX_BOT_TOKEN_FROM_BOTFATHER>",
+      "botToken": "YOUR_CODEX_BOT_TOKEN",
       "allowedChatIds": [
         8252879179,
-        -100TRADING_GROUP_ID,
-        -100VC_GROUP_ID
+        -1001234567890,
+        -1009876543210
       ]
     }
   },

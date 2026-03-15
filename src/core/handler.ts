@@ -123,17 +123,19 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
       }
     }
 
-    // First-time onboarding
-    if (isFirstTime() && !isInSetup(chatId)) {
-      await startOnboarding(channel, chatId);
-      saveMessage({ role: "user", content: text, channel: msg.channel, chatId, timestamp: msg.timestamp });
-      return;
-    }
+    // First-time onboarding (skip for interbot review messages)
+    if (!reviewBotMsg) {
+      if (isFirstTime() && !isInSetup(chatId)) {
+        await startOnboarding(channel, chatId);
+        saveMessage({ role: "user", content: text, channel: msg.channel, chatId, timestamp: msg.timestamp });
+        return;
+      }
 
-    // Onboarding in progress
-    if (isInSetup(chatId)) {
-      const handled = await handleOnboardingStep(channel, chatId, text);
-      if (handled) return;
+      // Onboarding in progress
+      if (isInSetup(chatId)) {
+        const handled = await handleOnboardingStep(channel, chatId, text);
+        if (handled) return;
+      }
     }
 
     // Log incoming message
@@ -146,17 +148,26 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
     });
     appendDailyLog(`[${senderName}] ${text.slice(0, 100)}`);
 
-    // Log to group chat JSONL if this is from the interbot group
-    if (config.interbot?.enabled && config.interbot.groupChatId &&
-        String(config.interbot.groupChatId) === chatId) {
-      const incomingBotMsg = parseBotMsg(text);
+    // Log to group chat JSONL for any interbot review message
+    // Uses reviewBotMsg (already parsed) or checks if chatId is a known group
+    if (config.interbot?.enabled && reviewBotMsg) {
       appendGroupChatLog(chatId, {
         ts: new Date().toISOString(),
         bot: options?.botUsername ?? "unknown",
-        role: incomingBotMsg ? "bot" : "user",
+        role: "bot",
+        from: reviewBotMsg.header.from,
+        type: reviewBotMsg.header.type,
+        reqId: reviewBotMsg.header.reqId,
+        text: text.slice(0, 500),
+      });
+    } else if (config.interbot?.enabled && config.interbot.groupChatId &&
+        String(config.interbot.groupChatId) === chatId) {
+      // Non-review messages in the configured group chat (project bot's group)
+      appendGroupChatLog(chatId, {
+        ts: new Date().toISOString(),
+        bot: options?.botUsername ?? "unknown",
+        role: "user",
         from: senderName,
-        type: incomingBotMsg?.header.type,
-        reqId: incomingBotMsg?.header.reqId,
         text: text.slice(0, 500),
       });
     }
