@@ -241,30 +241,37 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
         }
       }
 
-      // If this was a review request, wrap response as BOT_MSG review_response
+      // If this was a review message, wrap response as structured BOT_MSG
       if (reviewBotMsg && config.interbot?.enabled && options?.botUsername) {
         const groupChatId = config.interbot.groupChatId;
         if (groupChatId) {
+          // Determine reply type based on incoming message type:
+          // review_request/review_reply → respond with review_response
+          // review_response → respond with review_reply (keeps same reqId)
+          const replyType = reviewBotMsg.header.type === "review_response"
+            ? "review_reply" as const
+            : "review_response" as const;
+
           const responseHeader: BotMsgHeader = {
             from: options.botUsername,
-            to: reviewBotMsg.header.from, // send back to the requesting bot
-            type: "review_response",
-            reqId: reviewBotMsg.header.reqId,
+            to: reviewBotMsg.header.from, // send back to the sender
+            type: replyType,
+            reqId: reviewBotMsg.header.reqId, // always preserve reqId
           };
-          const responseBody = {
+          const responseBody: Record<string, unknown> = {
             review: response,
             workingDir: reviewBotMsg.body.workingDir,
           };
           const botMsgText = buildBotMsg(responseHeader, responseBody);
           await channel.sendText(String(groupChatId), botMsgText, threadId);
 
-          // Log outgoing review response
+          // Log outgoing review message
           appendGroupChatLog(String(groupChatId), {
             ts: new Date().toISOString(),
             bot: options.botUsername,
             role: "bot",
             from: options.botUsername,
-            type: "review_response",
+            type: replyType,
             reqId: reviewBotMsg.header.reqId,
             text: response.slice(0, 500),
           });
