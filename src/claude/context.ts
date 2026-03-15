@@ -112,13 +112,14 @@ function buildCapabilitiesSection(chatId: string): string {
   // Code review capability (only when interbot is enabled and provider is claude)
   const appConfig = getConfig();
   if (appConfig.interbot?.enabled && (appConfig.provider ?? "claude") === "claude") {
-    lines.push("## Code Review");
-    lines.push("When you make significant code changes (new features, refactoring, bug fixes, design changes),");
-    lines.push("you SHOULD request a code review by including a hidden tag at the END of your response:");
-    lines.push('  <!--REVIEW_REQUEST:{"workingDir":"<project_dir>","type":"code_change","summary":"<what changed>","files":["file1.py"],"branch":"<branch>"}-->');
-    lines.push("The system will automatically fill in sender identity. You only need to provide workingDir, type, summary, files, and branch.");
-    lines.push("Do NOT request review for: simple questions, status checks, config changes, or trivial fixes.");
-    lines.push("ALWAYS include a natural language summary in your response before the tag.");
+    lines.push("## Code Review (IMPORTANT)");
+    lines.push("You have an automated code review system. Do NOT use debate scripts or other tools for code review.");
+    lines.push("Instead, when you make code changes OR when the user asks for a review, include this hidden tag at the END of your response:");
+    lines.push('  <!--REVIEW_REQUEST:{"workingDir":"~/kkabi-trading","type":"code_change","summary":"added format_price utility","files":["utils/formatting.py"],"branch":"feature/format-price"}-->');
+    lines.push("The system will automatically send this to the Codex review bot. You do NOT need to run any scripts.");
+    lines.push("Replace the example values with actual values from your work.");
+    lines.push("Do NOT request review for: simple questions, status checks, or config lookups.");
+    lines.push("ALWAYS include a natural language summary before the tag.");
     lines.push("");
   }
 
