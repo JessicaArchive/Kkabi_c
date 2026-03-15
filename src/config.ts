@@ -86,6 +86,7 @@ const ProviderSchema = z.enum(["claude", "codex"]).default("claude");
 const InterbotConfigSchema = z.object({
   enabled: z.boolean().default(false),
   groupChatId: z.number().optional(),
+  displayBotToken: z.string().optional(), // Codex 봇 토큰 — 리뷰 결과를 이 봇 이름으로 표시
 }).default({});
 
 const DataDirSchema = z.string().optional();

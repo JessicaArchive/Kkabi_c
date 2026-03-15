@@ -49,17 +49,10 @@ export class CodexProvider implements Provider {
         if (!line.trim()) continue;
         try {
           const event = JSON.parse(line);
-          if (event.type === "message" && event.role === "assistant") {
-            for (const part of event.content ?? []) {
-              if (part.type === "output_text" && part.text) {
-                resultText += part.text;
-                logWrite(`${tag} ${part.text}\n`);
-              }
-            }
-          }
-          if (event.type === "output_text" && event.text) {
-            resultText += event.text;
-            logWrite(`${tag} ${event.text}\n`);
+          // Codex CLI --json emits item.completed events with item.type = "agent_message"
+          if (event.type === "item.completed" && event.item?.type === "agent_message" && event.item.text) {
+            resultText += event.item.text;
+            logWrite(`${tag} ${event.item.text}\n`);
           }
         } catch {
           logWrite(`${tag} ${line}\n`);
@@ -88,10 +81,8 @@ export class CodexProvider implements Provider {
         if (lineBuf.trim()) {
           try {
             const event = JSON.parse(lineBuf);
-            if (event.type === "message" && event.role === "assistant") {
-              for (const part of event.content ?? []) {
-                if (part.type === "output_text" && part.text) resultText += part.text;
-              }
+            if (event.type === "item.completed" && event.item?.type === "agent_message" && event.item.text) {
+              resultText += event.item.text;
             }
           } catch {
             resultText += lineBuf;

@@ -13,7 +13,6 @@ import { executeCronActions } from "./cronExecutor.js";
 import { filterIncoming, type FilterConfig } from "../interbot/filter.js";
 import { parseReviewTags } from "./reviewParser.js";
 import { executeReviewRequests } from "./reviewExecutor.js";
-import { buildBotMsg, parseBotMsg, type BotMsg, type BotMsgHeader } from "../interbot/protocol.js";
 import { appendGroupChatLog } from "../interbot/log.js";
 
 function resolveWorkingDir(chatId: string, channelType: ChannelType): string | undefined {
@@ -36,60 +35,6 @@ function resolveWorkingDir(chatId: string, channelType: ChannelType): string | u
   return undefined;
 }
 
-/**
- * Build a review-specific prompt from a BOT_MSG body.
- * Gives the provider clear context about what to review and where.
- */
-function buildReviewPrompt(botMsg: BotMsg): string {
-  const { body, header } = botMsg;
-  const summary = body.summary as string ?? "";
-  const files = (body.files as string[] ?? []).join(", ");
-  const branch = body.branch as string ?? "";
-  const workingDir = body.workingDir as string ?? "";
-
-  const parts: string[] = [];
-  parts.push(`[CODE REVIEW REQUEST from ${header.from}]`);
-  parts.push(`Request ID: ${header.reqId}`);
-  parts.push(`Working directory: ${workingDir}`);
-  if (branch) parts.push(`Branch: ${branch}`);
-  if (files) parts.push(`Files changed: ${files}`);
-  parts.push(`Summary: ${summary}`);
-  parts.push("");
-  parts.push("Please review the changes described above. Check the actual files and git diff in the working directory.");
-  parts.push("Focus on: bugs, edge cases, security issues, performance problems.");
-  parts.push("Be concise and constructive.");
-  parts.push("");
-  parts.push(`When you respond, format your response as a review. Your response will be sent back to ${header.from}.`);
-
-  return parts.join("\n");
-}
-
-/**
- * Build a prompt for when Claude receives Codex review feedback (review_response).
- * Claude should review the feedback, fix issues or explain disagreements.
- */
-function buildFeedbackPrompt(botMsg: BotMsg): string {
-  const { body, header } = botMsg;
-  const review = body.review as string ?? "";
-  const workingDir = body.workingDir as string ?? "";
-
-  const parts: string[] = [];
-  parts.push(`[CODE REVIEW FEEDBACK from ${header.from}]`);
-  parts.push(`Request ID: ${header.reqId}`);
-  parts.push(`Working directory: ${workingDir}`);
-  parts.push("");
-  parts.push("The reviewer said:");
-  parts.push(review);
-  parts.push("");
-  parts.push("Based on this feedback:");
-  parts.push("1. If the reviewer found real issues, fix them in the code.");
-  parts.push("2. If you disagree with a point, explain why clearly.");
-  parts.push("3. Summarize what you fixed and what you disagree with.");
-  parts.push("Your response will be sent back to the reviewer for further discussion if needed.");
-
-  return parts.join("\n");
-}
-
 export interface HandlerOptions {
   provider?: ProviderType;
   botUsername?: string;
@@ -100,9 +45,8 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
   return async (msg: IncomingMessage): Promise<void> => {
     const { chatId, text, threadId, senderName } = msg;
 
-    // Interbot message filtering (loop prevention)
+    // Interbot: BOT_MSG 메시지는 무시 (Codex 리뷰는 내부 enqueue로 처리)
     const config = getConfig();
-    let reviewBotMsg: BotMsg | undefined;
 
     if (config.interbot?.enabled && options?.botUsername) {
       const filterConfig: FilterConfig = {
@@ -110,32 +54,20 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
         myProvider: provider,
       };
       const filterResult = filterIncoming(text, filterConfig);
-      if (filterResult.action === "ignore") {
+      if (filterResult.action === "ignore" || filterResult.action === "process_review") {
         return;
-      }
-      if (filterResult.action === "process_review" && filterResult.botMsg) {
-        // Fix 3: check "to" field — only process if addressed to me
-        const to = filterResult.botMsg.header.to;
-        if (to && to !== options.botUsername) {
-          return; // not addressed to me
-        }
-        reviewBotMsg = filterResult.botMsg;
       }
     }
 
-    // First-time onboarding (skip for interbot review messages)
-    if (!reviewBotMsg) {
-      if (isFirstTime() && !isInSetup(chatId)) {
-        await startOnboarding(channel, chatId);
-        saveMessage({ role: "user", content: text, channel: msg.channel, chatId, timestamp: msg.timestamp });
-        return;
-      }
-
-      // Onboarding in progress
-      if (isInSetup(chatId)) {
-        const handled = await handleOnboardingStep(channel, chatId, text);
-        if (handled) return;
-      }
+    // First-time onboarding
+    if (isFirstTime() && !isInSetup(chatId)) {
+      await startOnboarding(channel, chatId);
+      saveMessage({ role: "user", content: text, channel: msg.channel, chatId, timestamp: msg.timestamp });
+      return;
+    }
+    if (isInSetup(chatId)) {
+      const handled = await handleOnboardingStep(channel, chatId, text);
+      if (handled) return;
     }
 
     // Log incoming message
@@ -148,21 +80,9 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
     });
     appendDailyLog(`[${senderName}] ${text.slice(0, 100)}`);
 
-    // Log to group chat JSONL for any interbot review message
-    // Uses reviewBotMsg (already parsed) or checks if chatId is a known group
-    if (config.interbot?.enabled && reviewBotMsg) {
-      appendGroupChatLog(chatId, {
-        ts: new Date().toISOString(),
-        bot: options?.botUsername ?? "unknown",
-        role: "bot",
-        from: reviewBotMsg.header.from,
-        type: reviewBotMsg.header.type,
-        reqId: reviewBotMsg.header.reqId,
-        text: text.slice(0, 500),
-      });
-    } else if (config.interbot?.enabled && config.interbot.groupChatId &&
+    // Log group chat messages
+    if (config.interbot?.enabled && config.interbot.groupChatId &&
         String(config.interbot.groupChatId) === chatId) {
-      // Non-review messages in the configured group chat (project bot's group)
       appendGroupChatLog(chatId, {
         ts: new Date().toISOString(),
         bot: options?.botUsername ?? "unknown",
@@ -172,47 +92,32 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
       });
     }
 
-    // Command handling (skip for review messages)
-    if (!reviewBotMsg && isCommand(text)) {
+    // Command handling
+    if (isCommand(text)) {
       const result = await executeCommand(text, chatId, msg.channel);
       await channel.sendText(chatId, result.text, threadId);
       return;
     }
 
-    // Safety check (skip for review messages — they are system-generated)
-    if (!reviewBotMsg) {
-      const safety = checkSafety(text);
-      if (!safety.safe) {
-        const approved = await requestApproval(
-          channel,
-          chatId,
-          text,
-          safety.matchedKeywords,
-          threadId,
-        );
-        if (!approved) {
-          await channel.sendText(chatId, "Request denied.", threadId);
-          return;
-        }
+    // Safety check
+    const safety = checkSafety(text);
+    if (!safety.safe) {
+      const approved = await requestApproval(
+        channel,
+        chatId,
+        text,
+        safety.matchedKeywords,
+        threadId,
+      );
+      if (!approved) {
+        await channel.sendText(chatId, "Request denied.", threadId);
+        return;
       }
     }
 
     // Build prompt and resolve workingDir
-    let prompt: string;
-    let workingDir: string | undefined;
-
-    if (reviewBotMsg) {
-      // Use different prompts based on message type:
-      // review_request/review_reply → "perform a code review" (for Codex)
-      // review_response → "review this feedback and fix/respond" (for Claude)
-      prompt = reviewBotMsg.header.type === "review_response"
-        ? buildFeedbackPrompt(reviewBotMsg)
-        : buildReviewPrompt(reviewBotMsg);
-      workingDir = reviewBotMsg.body.workingDir as string | undefined;
-    } else {
-      prompt = buildPrompt(text, chatId);
-      workingDir = resolveWorkingDir(chatId, msg.channel);
-    }
+    const prompt = buildPrompt(text, chatId);
+    const workingDir = resolveWorkingDir(chatId, msg.channel);
 
     const { promise, position } = enqueue({ prompt, chatId, channel: msg.channel, workingDir, provider });
 
@@ -284,7 +189,7 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
         // Auto-review: if code-modifying tools were used, automatically request review
         const CODE_TOOLS = ["Write", "Edit", "NotebookEdit"];
         const usedCodeTools = (result.toolsUsed ?? []).filter((t) => CODE_TOOLS.includes(t));
-        if (usedCodeTools.length > 0 && reviewRequests.length === 0 && !reviewBotMsg) {
+        if (usedCodeTools.length > 0 && reviewRequests.length === 0) {
           const runnerConfig = config.runner ?? config.claude;
           const autoReviewResults = await executeReviewRequests(
             [{
@@ -307,45 +212,7 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
         }
       }
 
-      // If this was a review message, wrap response as structured BOT_MSG
-      // Reply to the same chat the message came from (supports per-project groups)
-      if (reviewBotMsg && config.interbot?.enabled && options?.botUsername) {
-        const replyChatId = chatId; // use incoming chatId, not config groupChatId
-        {
-          // Determine reply type based on incoming message type:
-          // review_request/review_reply → respond with review_response
-          // review_response → respond with review_reply (keeps same reqId)
-          const replyType = reviewBotMsg.header.type === "review_response"
-            ? "review_reply" as const
-            : "review_response" as const;
-
-          const responseHeader: BotMsgHeader = {
-            from: options.botUsername,
-            to: reviewBotMsg.header.from, // send back to the sender
-            type: replyType,
-            reqId: reviewBotMsg.header.reqId, // always preserve reqId
-          };
-          const responseBody: Record<string, unknown> = {
-            review: response,
-            workingDir: reviewBotMsg.body.workingDir,
-          };
-          const botMsgText = buildBotMsg(responseHeader, responseBody);
-          await channel.sendText(replyChatId, botMsgText, threadId);
-
-          // Log outgoing review message
-          appendGroupChatLog(replyChatId, {
-            ts: new Date().toISOString(),
-            bot: options.botUsername,
-            role: "bot",
-            from: options.botUsername,
-            type: replyType,
-            reqId: reviewBotMsg.header.reqId,
-            text: response.slice(0, 500),
-          });
-        }
-      } else {
-        await channel.sendText(chatId, response, threadId);
-      }
+      await channel.sendText(chatId, response, threadId);
 
       // Save conversation
       saveMessage({

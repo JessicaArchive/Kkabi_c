@@ -99,6 +99,12 @@ export class ClaudeProvider implements Provider {
                     resultText += block.text;
                     logWrite(`${tag} ${block.text}\n`);
                   }
+                  if (block.type === "tool_use" && block.name) {
+                    logWrite(`${tag} [tool: ${block.name}]\n`);
+                    if (!toolsUsed.includes(block.name)) {
+                      toolsUsed.push(block.name);
+                    }
+                  }
                 }
               }
               break;

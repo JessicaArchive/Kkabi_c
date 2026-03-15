@@ -2,7 +2,7 @@ export type BotMsgType = "review_request" | "review_response" | "review_reply";
 
 export interface BotMsgHeader {
   from: string;       // canonical bot username (e.g. "kkabi_trading_bot")
-  to?: string;        // target bot provider type (e.g. "codex") or username
+  to?: string;        // target bot username
   type: BotMsgType;
   reqId: string;       // e.g. "rev_kkabi_trading_bot_1710504600000"
 }
@@ -45,12 +45,6 @@ export function parseBotMsg(text: string): BotMsg | null {
   } catch {
     return null;
   }
-}
-
-export function buildBotMsg(header: BotMsgHeader, body: Record<string, unknown>): string {
-  const toPart = header.to ? `,to=${header.to}` : "";
-  const headerLine = `[BOT_MSG:from=${header.from}${toPart},type=${header.type},reqId=${header.reqId}]`;
-  return `${headerLine}\n${JSON.stringify(body)}`;
 }
 
 export function generateReqId(botUsername: string): string {
