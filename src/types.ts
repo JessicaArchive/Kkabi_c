@@ -1,5 +1,7 @@
 export type ChannelType = "slack" | "github" | "gchat" | "telegram" | "local";
 
+export type ProviderType = "claude" | "codex";
+
 export interface IncomingMessage {
   id: string;
   channel: ChannelType;
