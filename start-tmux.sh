@@ -48,12 +48,18 @@ cmd_stop() {
 
 cmd_status() {
   if ! tmux has-session -t "$SESSION" 2>/dev/null; then
-    echo "No kkabi tmux session running."
+    echo "❌ tmux 세션 없음"
     return
   fi
-  echo "Kkabi tmux session is running."
+  echo "✅ tmux 세션 실행중"
   echo ""
-  tmux list-windows -t "$SESSION" -F "  [#{window_index}] #{window_name} — #{pane_current_command} (pid: #{pane_pid})"
+  while IFS='|' read -r idx name cmd pid; do
+    if [[ "$cmd" == "zsh" || "$cmd" == "bash" ]]; then
+      echo "  🔴 [$idx] $name — 죽음 (셸만 남음)"
+    else
+      echo "  🟢 [$idx] $name — 실행중 ($cmd, pid:$pid)"
+    fi
+  done < <(tmux list-windows -t "$SESSION" -F "#{window_index}|#{window_name}|#{pane_current_command}|#{pane_pid}")
 }
 
 cmd_start() {
