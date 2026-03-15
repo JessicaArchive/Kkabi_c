@@ -37,6 +37,7 @@ export interface ClaudeResult {
   output: string;
   error?: string;
   timedOut: boolean;
+  toolsUsed?: string[];
 }
 
 export interface QueueItem {

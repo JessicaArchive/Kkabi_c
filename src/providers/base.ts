@@ -11,6 +11,7 @@ export interface RunResult {
   output: string;
   error?: string;
   timedOut: boolean;
+  toolsUsed?: string[];  // tools invoked during execution (e.g. "Write", "Edit", "Bash")
 }
 
 export interface RunHandle {

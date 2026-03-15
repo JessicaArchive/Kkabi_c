@@ -80,6 +80,7 @@ export class ClaudeProvider implements Provider {
     let resultText = "";
     let stderr = "";
     let lineBuf = "";
+    const toolsUsed: string[] = [];
 
     proc.stdout?.on("data", (chunk: Buffer) => {
       lineBuf += chunk.toString();
@@ -118,6 +119,9 @@ export class ClaudeProvider implements Provider {
                 const toolName = event.tool_name ?? event.content_block?.tool_name ?? "";
                 if (toolName) {
                   logWrite(`${tag} [tool: ${toolName}]\n`);
+                  if (!toolsUsed.includes(toolName)) {
+                    toolsUsed.push(toolName);
+                  }
                 }
               }
               break;
@@ -156,10 +160,10 @@ export class ClaudeProvider implements Provider {
         }
 
         if (code === 0) {
-          resolve({ output: resultText.trim(), timedOut: false });
+          resolve({ output: resultText.trim(), timedOut: false, toolsUsed });
         } else {
           const error = classifyError(stderr, code);
-          resolve({ output: resultText.trim(), error, timedOut: false });
+          resolve({ output: resultText.trim(), error, timedOut: false, toolsUsed });
         }
       });
 

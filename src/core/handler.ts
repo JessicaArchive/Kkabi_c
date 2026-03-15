@@ -280,6 +280,31 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
             response = response + "\n\n" + extras.join("\n");
           }
         }
+
+        // Auto-review: if code-modifying tools were used, automatically request review
+        const CODE_TOOLS = ["Write", "Edit", "NotebookEdit"];
+        const usedCodeTools = (result.toolsUsed ?? []).filter((t) => CODE_TOOLS.includes(t));
+        if (usedCodeTools.length > 0 && reviewRequests.length === 0 && !reviewBotMsg) {
+          const runnerConfig = config.runner ?? config.claude;
+          const autoReviewResults = await executeReviewRequests(
+            [{
+              workingDir: workingDir ?? runnerConfig.workingDir,
+              type: "code_change",
+              summary: `Auto-review: ${usedCodeTools.join(", ")} used. ${text.slice(0, 100)}`,
+            }],
+            channel,
+            options.botUsername,
+          );
+          const extras: string[] = [];
+          for (const r of autoReviewResults) {
+            if (r.success) {
+              extras.push(`Auto review requested (${r.reqId?.slice(0, 20)})`);
+            }
+          }
+          if (extras.length > 0) {
+            response = response + "\n\n" + extras.join("\n");
+          }
+        }
       }
 
       // If this was a review message, wrap response as structured BOT_MSG
