@@ -65,6 +65,13 @@ cmd_status() {
   done < <(tmux list-windows -t "$SESSION" -F "#{window_index}|#{window_name}|#{pane_current_command}|#{pane_pid}")
 }
 
+send_bot_cmd() {
+  local target="$1"
+  local label="$2"
+  local cmd="$3"
+  tmux send-keys -t "$target" "cd \"$SCRIPT_DIR\" && $FNM_INIT && while true; do echo \"[$label] Starting at \$(date)\"; $cmd; EXIT_CODE=\$?; echo \"[$label] Exited (\$EXIT_CODE). Restarting in 5s...\"; sleep 5; done" Enter
+}
+
 cmd_start() {
   # If session already exists, just report it.
   if tmux has-session -t "$SESSION" 2>/dev/null; then
@@ -86,12 +93,9 @@ cmd_start() {
   fi
 
   # Create session with main bot.
-  local main_cmd
-  main_cmd="$(make_restart_cmd "kkabi" "npx tsx src/index.ts")"
-  tmux new-session -d -s "$SESSION" -n "kkabi" "$main_cmd"
+  tmux new-session -d -s "$SESSION" -n "kkabi"
+  send_bot_cmd "$SESSION:kkabi" "kkabi" "npx tsx src/index.ts"
   echo "[kkabi] Started in tmux window 0"
-
-  # Wait for main bot to initialize.
   sleep 3
 
   # Start worker bots from configs/.
@@ -103,9 +107,8 @@ cmd_start() {
       name="$(basename "$config" .json)"
       # codex는 내장 provider — 별도 봇으로 띄우지 않음
       [[ "$name" == "codex" ]] && continue
-      local worker_cmd
-      worker_cmd="$(make_restart_cmd "$name" "npx tsx src/index.ts --config '$config'")"
-      tmux new-window -a -t "$SESSION" -n "$name" "$worker_cmd"
+      tmux new-window -a -t "$SESSION" -n "$name"
+      send_bot_cmd "$SESSION:$name" "$name" "npx tsx src/index.ts --config '$config'"
       echo "[$name] Started in tmux window $idx"
       idx=$((idx + 1))
       sleep 2
