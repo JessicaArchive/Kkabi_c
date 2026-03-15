@@ -1,0 +1,25 @@
+{
+  "provider": "codex",
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "botToken": "<CODEX_BOT_TOKEN_FROM_BOTFATHER>",
+      "allowedChatIds": [8252879179]
+    }
+  },
+  "runner": {
+    "timeoutMs": 300000,
+    "maxConcurrent": 3,
+    "maxPerWorkingDir": 1,
+    "workingDir": "~"
+  },
+  "memory": { "enabled": true, "logRetentionDays": 30 },
+  "safety": { "enabled": false },
+  "scheduler": { "enabled": false },
+  "dashboard": { "enabled": false },
+  "dataDir": "~/Kkabi_c/data-codex",
+  "interbot": {
+    "enabled": true,
+    "groupChatId": -1234567890
+  }
+}
