@@ -1,5 +1,5 @@
 import type { Channel } from "../channels/base.js";
-import type { ChannelType, IncomingMessage } from "../types.js";
+import type { ChannelType, IncomingMessage, ProviderType } from "../types.js";
 import { isCommand, executeCommand } from "./commands.js";
 import { buildPrompt } from "../claude/context.js";
 import { enqueue } from "../claude/queue.js";
@@ -31,7 +31,13 @@ function resolveWorkingDir(chatId: string, channelType: ChannelType): string | u
   return undefined;
 }
 
-export function createHandler(channel: Channel) {
+export interface HandlerOptions {
+  provider?: ProviderType;
+  botUsername?: string;
+}
+
+export function createHandler(channel: Channel, options?: HandlerOptions) {
+  const provider = options?.provider ?? "claude";
   return async (msg: IncomingMessage): Promise<void> => {
     const { chatId, text, threadId, senderName } = msg;
 
@@ -84,7 +90,7 @@ export function createHandler(channel: Channel) {
     // Build prompt and enqueue
     const prompt = buildPrompt(text, chatId);
     const workingDir = resolveWorkingDir(chatId, msg.channel);
-    const { promise, position } = enqueue({ prompt, chatId, channel: msg.channel, workingDir });
+    const { promise, position } = enqueue({ prompt, chatId, channel: msg.channel, workingDir, provider });
 
     if (position > 1) {
       await channel.sendText(chatId, `Waiting in queue... (position ${position})`, threadId);

@@ -15,6 +15,7 @@ import { cancelCurrent } from "./claude/runner.js";
 import { createDashboardServer } from "./dashboard/server.js";
 import { getDbPath, getLocalOutputLogPath } from "./paths.js";
 import type { Channel } from "./channels/base.js";
+import { setQueueLimits } from "./claude/queue.js";
 import type { ChannelType } from "./types.js";
 
 const channels = new Map<ChannelType, Channel>();
@@ -48,7 +49,16 @@ async function main(): Promise<void> {
   const config = loadConfig(configPath);
   syncWorkingDirFromConfig();
   initProjectCommands(getWorkingDir(), config.projectType);
-  console.log("[Config] Loaded");
+  const provider = config.provider ?? "claude";
+
+  // Set queue limits from runner config
+  const runner = config.runner ?? config.claude;
+  setQueueLimits(
+    runner.maxConcurrent,
+    (config.runner as any)?.maxPerWorkingDir ?? 1,
+  );
+
+  console.log(`[Config] Loaded (provider: ${provider})`);
 
   // Init DB
   initDb(getDbPath());
@@ -76,9 +86,12 @@ async function main(): Promise<void> {
 
   if (config.channels.telegram?.enabled) {
     const telegram = new TelegramChannel(config.channels.telegram);
-    const handler = createHandler(telegram);
-    telegram.onMessage(handler);
     await telegram.start();
+    const handler = createHandler(telegram, {
+      provider,
+      botUsername: telegram.getBotUsername(),
+    });
+    telegram.onMessage(handler);
     channels.set("telegram", telegram);
   }
 
