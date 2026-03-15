@@ -72,16 +72,35 @@ const DashboardConfigSchema = z.object({
   port: z.number().positive().default(3000),
 });
 
+const RunnerConfigSchema = z.object({
+  timeoutMs: z.number().positive().default(300_000),
+  maxConcurrent: z.number().positive().default(1),
+  maxPerWorkingDir: z.number().positive().default(1),
+  workingDir: z.string().default("~"),
+  projects: z.record(z.string(), z.string()).default({}),
+  disallowedTools: z.array(z.string()).default([]),
+});
+
+const ProviderSchema = z.enum(["claude", "codex"]).default("claude");
+
+const InterbotConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  groupChatId: z.number().optional(),
+}).default({});
+
 const DataDirSchema = z.string().optional();
 const ProjectTypeSchema = z.string().optional();
 
 const ConfigSchema = z.object({
+  provider: ProviderSchema,
+  runner: RunnerConfigSchema.optional(),
   channels: ChannelsConfigSchema,
   claude: ClaudeConfigSchema.default({}),
   memory: MemoryConfigSchema.default({}),
   safety: SafetyConfigSchema.default({}),
   scheduler: SchedulerConfigSchema.default({}),
   dashboard: DashboardConfigSchema.default({}),
+  interbot: InterbotConfigSchema,
   dataDir: DataDirSchema,
   projectType: ProjectTypeSchema,
 });
@@ -91,6 +110,8 @@ export type SlackConfig = z.infer<typeof SlackConfigSchema>;
 export type GitHubConfig = z.infer<typeof GitHubConfigSchema>;
 export type GitHubRepo = z.infer<typeof GitHubRepoSchema>;
 export type TelegramConfig = z.infer<typeof TelegramConfigSchema>;
+export type RunnerConfig = z.infer<typeof RunnerConfigSchema>;
+export type InterbotConfig = z.infer<typeof InterbotConfigSchema>;
 
 export function getRepoName(repo: GitHubRepo): string {
   return typeof repo === "string" ? repo : repo.name;
@@ -102,6 +123,12 @@ export function loadConfig(configPath?: string): AppConfig {
   const filePath = configPath ?? resolve(process.cwd(), "config.json");
   const raw = readFileSync(filePath, "utf-8");
   const json = JSON.parse(raw);
+
+  // Backwards compat: if "claude" exists but "runner" doesn't, copy claude → runner
+  if (json.claude && !json.runner) {
+    json.runner = { ...json.claude };
+  }
+
   _config = ConfigSchema.parse(json);
   return _config;
 }
