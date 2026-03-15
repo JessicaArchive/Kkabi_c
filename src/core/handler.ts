@@ -64,6 +64,32 @@ function buildReviewPrompt(botMsg: BotMsg): string {
   return parts.join("\n");
 }
 
+/**
+ * Build a prompt for when Claude receives Codex review feedback (review_response).
+ * Claude should review the feedback, fix issues or explain disagreements.
+ */
+function buildFeedbackPrompt(botMsg: BotMsg): string {
+  const { body, header } = botMsg;
+  const review = body.review as string ?? "";
+  const workingDir = body.workingDir as string ?? "";
+
+  const parts: string[] = [];
+  parts.push(`[CODE REVIEW FEEDBACK from ${header.from}]`);
+  parts.push(`Request ID: ${header.reqId}`);
+  parts.push(`Working directory: ${workingDir}`);
+  parts.push("");
+  parts.push("The reviewer said:");
+  parts.push(review);
+  parts.push("");
+  parts.push("Based on this feedback:");
+  parts.push("1. If the reviewer found real issues, fix them in the code.");
+  parts.push("2. If you disagree with a point, explain why clearly.");
+  parts.push("3. Summarize what you fixed and what you disagree with.");
+  parts.push("Your response will be sent back to the reviewer for further discussion if needed.");
+
+  return parts.join("\n");
+}
+
 export interface HandlerOptions {
   provider?: ProviderType;
   botUsername?: string;
@@ -165,8 +191,12 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
     let workingDir: string | undefined;
 
     if (reviewBotMsg) {
-      // Fix 1: use review body's workingDir and build review-specific prompt
-      prompt = buildReviewPrompt(reviewBotMsg);
+      // Use different prompts based on message type:
+      // review_request/review_reply → "perform a code review" (for Codex)
+      // review_response → "review this feedback and fix/respond" (for Claude)
+      prompt = reviewBotMsg.header.type === "review_response"
+        ? buildFeedbackPrompt(reviewBotMsg)
+        : buildReviewPrompt(reviewBotMsg);
       workingDir = reviewBotMsg.body.workingDir as string | undefined;
     } else {
       prompt = buildPrompt(text, chatId);
