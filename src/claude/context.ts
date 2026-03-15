@@ -3,6 +3,7 @@ import { readMemory } from "../memory/manager.js";
 import { loadPersona, getLang } from "../memory/persona.js";
 import { listCrons } from "../scheduler/cron.js";
 import { loadAgents } from "../agents/store.js";
+import { getConfig } from "../config.js";
 
 export function buildPrompt(userMessage: string, chatId: string): string {
   const parts: string[] = [];
@@ -107,6 +108,19 @@ function buildCapabilitiesSection(chatId: string): string {
     lines.push("- Respond in Korean.");
   }
   lines.push("");
+
+  // Code review capability (only when interbot is enabled and provider is claude)
+  const appConfig = getConfig();
+  if (appConfig.interbot?.enabled && (appConfig.provider ?? "claude") === "claude") {
+    lines.push("## Code Review");
+    lines.push("When you make significant code changes (new features, refactoring, bug fixes, design changes),");
+    lines.push("you SHOULD request a code review by including a hidden tag at the END of your response:");
+    lines.push('  <!--REVIEW_REQUEST:{"from":"<your_bot_username>","workingDir":"<project_dir>","type":"code_change","summary":"<what changed>","files":["file1.py"],"branch":"<branch>"}-->');
+    lines.push("The from field should be your bot username. The workingDir should match your working directory.");
+    lines.push("Do NOT request review for: simple questions, status checks, config changes, or trivial fixes.");
+    lines.push("ALWAYS include a natural language summary in your response before the tag.");
+    lines.push("");
+  }
 
   // Available agents
   const agents = loadAgents();
