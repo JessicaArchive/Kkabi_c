@@ -54,11 +54,14 @@ cmd_status() {
   echo "✅ tmux 세션 실행중"
   echo ""
   while IFS='|' read -r idx name cmd pid; do
-    if [[ "$cmd" == "zsh" || "$cmd" == "bash" ]]; then
-      echo "  🔴 [$idx] $name — 죽음 (셸만 남음)"
-    else
-      echo "  🟢 [$idx] $name — 실행중 ($cmd, pid:$pid)"
-    fi
+    case "$cmd" in
+      node|npm|npx|codex|claude|tsx|python|python3)
+        echo "  🟢 [$idx] $name — 실행중 ($cmd, pid:$pid)" ;;
+      sleep)
+        echo "  🟡 [$idx] $name — 재시작 대기중" ;;
+      *)
+        echo "  🔴 [$idx] $name — 죽음 ($cmd)" ;;
+    esac
   done < <(tmux list-windows -t "$SESSION" -F "#{window_index}|#{window_name}|#{pane_current_command}|#{pane_pid}")
 }
 
@@ -100,7 +103,7 @@ cmd_start() {
       name="$(basename "$config" .json)"
       local worker_cmd
       worker_cmd="$(make_restart_cmd "$name" "npx tsx src/index.ts --config '$config'")"
-      tmux new-window -t "$SESSION" -n "$name" "$worker_cmd"
+      tmux new-window -a -t "$SESSION" -n "$name" "$worker_cmd"
       echo "[$name] Started in tmux window $idx"
       idx=$((idx + 1))
       sleep 2
