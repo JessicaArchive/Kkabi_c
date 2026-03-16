@@ -12,6 +12,9 @@
 
 set -euo pipefail
 
+# Ensure Homebrew binaries (tmux, fnm, etc.) are in PATH.
+export PATH="/opt/homebrew/bin:$PATH"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIGS_DIR="$SCRIPT_DIR/configs"
 SESSION="kkabi"
@@ -54,12 +57,22 @@ cmd_status() {
   echo "✅ tmux 세션 실행중"
   echo ""
   while IFS='|' read -r idx name cmd pid; do
-    if [[ "$cmd" == "zsh" || "$cmd" == "bash" ]]; then
-      echo "  🔴 [$idx] $name — 죽음 (셸만 남음)"
-    else
-      echo "  🟢 [$idx] $name — 실행중 ($cmd, pid:$pid)"
-    fi
+    case "$cmd" in
+      node|npm|npx|codex|claude|tsx|python|python3)
+        echo "  🟢 [$idx] $name — 실행중 ($cmd, pid:$pid)" ;;
+      sleep)
+        echo "  🟡 [$idx] $name — 재시작 대기중" ;;
+      *)
+        echo "  🔴 [$idx] $name — 죽음 ($cmd)" ;;
+    esac
   done < <(tmux list-windows -t "$SESSION" -F "#{window_index}|#{window_name}|#{pane_current_command}|#{pane_pid}")
+}
+
+send_bot_cmd() {
+  local target="$1"
+  local label="$2"
+  local cmd="$3"
+  tmux send-keys -t "$target" "cd \"$SCRIPT_DIR\" && $FNM_INIT && while true; do echo \"[$label] Starting at \$(date)\"; $cmd; EXIT_CODE=\$?; echo \"[$label] Exited (\$EXIT_CODE). Restarting in 5s...\"; sleep 5; done" Enter
 }
 
 cmd_start() {
@@ -83,12 +96,9 @@ cmd_start() {
   fi
 
   # Create session with main bot.
-  local main_cmd
-  main_cmd="$(make_restart_cmd "kkabi" "npx tsx src/index.ts")"
-  tmux new-session -d -s "$SESSION" -n "kkabi" "$main_cmd"
+  tmux new-session -d -s "$SESSION" -n "kkabi"
+  send_bot_cmd "$SESSION:kkabi" "kkabi" "npx tsx src/index.ts"
   echo "[kkabi] Started in tmux window 0"
-
-  # Wait for main bot to initialize.
   sleep 3
 
   # Start worker bots from configs/.
@@ -98,9 +108,10 @@ cmd_start() {
       [ -f "$config" ] || continue
       local name
       name="$(basename "$config" .json)"
-      local worker_cmd
-      worker_cmd="$(make_restart_cmd "$name" "npx tsx src/index.ts --config '$config'")"
-      tmux new-window -t "$SESSION" -n "$name" "$worker_cmd"
+      # codex는 내장 provider — 별도 봇으로 띄우지 않음
+      [[ "$name" == "codex" ]] && continue
+      tmux new-window -a -t "$SESSION" -n "$name"
+      send_bot_cmd "$SESSION:$name" "$name" "npx tsx src/index.ts --config '$config'"
       echo "[$name] Started in tmux window $idx"
       idx=$((idx + 1))
       sleep 2

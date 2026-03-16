@@ -33,7 +33,7 @@ cat > "$CONFIG_FILE" << EOF
     "telegram": {
       "enabled": true,
       "botToken": "$TOKEN",
-      "allowedChatIds": []
+      "allowedChatIds": [8252879179]
     }
   },
   "claude": {
@@ -57,11 +57,18 @@ cat > "$CONFIG_FILE" << EOF
   "dashboard": {
     "enabled": false
   },
-  "dataDir": "$PROJECT_PATH/data"
+  "dataDir": "$PROJECT_PATH/data",
+  "interbot": {
+    "enabled": true
+  }
 }
 EOF
 
 echo "Created config: $CONFIG_FILE"
-echo "Role: worker bot (project execution only)"
-echo "Data directory: $PROJECT_PATH/data/"
-echo "Start with: ./start-all.sh"
+echo ""
+echo "Codex 리뷰 활성화하려면:"
+echo "  1. 그룹챗 만들고 봇 + @kkabi_codex_bot 초대"
+echo "  2. interbot.groupChatId, displayBotToken 추가"
+echo "  끄려면: interbot.enabled → false"
+echo ""
+echo "Start with: ./start-tmux.sh"
