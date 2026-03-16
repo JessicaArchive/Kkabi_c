@@ -12,6 +12,9 @@
 
 set -euo pipefail
 
+# Ensure Homebrew binaries (tmux, fnm, etc.) are in PATH.
+export PATH="/opt/homebrew/bin:$PATH"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIGS_DIR="$SCRIPT_DIR/configs"
 SESSION="kkabi"
