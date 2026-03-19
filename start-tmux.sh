@@ -40,6 +40,29 @@ done
 WRAPPER
 }
 
+cleanup_orphaned_processes() {
+  # start-all.sh / PM2 등 다른 방법으로 띄운 잔존 프로세스도 정리
+  local pids
+  pids="$(pgrep -f 'src/index.ts' 2>/dev/null || true)"
+  if [ -n "$pids" ]; then
+    echo "[cleanup] Killing orphaned bot processes: $pids"
+    echo "$pids" | xargs kill 2>/dev/null || true
+    sleep 2
+    pids="$(pgrep -f 'src/index.ts' 2>/dev/null || true)"
+    if [ -n "$pids" ]; then
+      echo "[cleanup] Force killing: $pids"
+      echo "$pids" | xargs kill -9 2>/dev/null || true
+    fi
+  fi
+  # start-all.sh 자체도 정리
+  local sh_pids
+  sh_pids="$(pgrep -f 'start-all.sh' 2>/dev/null || true)"
+  if [ -n "$sh_pids" ]; then
+    echo "[cleanup] Killing start-all.sh: $sh_pids"
+    echo "$sh_pids" | xargs kill 2>/dev/null || true
+  fi
+}
+
 cmd_stop() {
   if tmux has-session -t "$SESSION" 2>/dev/null; then
     tmux kill-session -t "$SESSION"
@@ -47,6 +70,7 @@ cmd_stop() {
   else
     echo "No kkabi tmux session running."
   fi
+  cleanup_orphaned_processes
 }
 
 cmd_status() {
@@ -85,6 +109,9 @@ cmd_start() {
     echo "To stop:   ./start-tmux.sh stop"
     return
   fi
+
+  # 다른 방법으로 띄운 잔존 프로세스 정리
+  cleanup_orphaned_processes
 
   # Clean up stale port.
   local port_pid
