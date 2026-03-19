@@ -140,7 +140,8 @@ function buildCapabilitiesSection(chatId: string): string {
     lines.push("## Current Cron Jobs for This Chat");
     for (const job of jobs) {
       const status = job.enabled ? "ON" : "OFF";
-      lines.push(`- ID: ${job.id.slice(0, 8)} | Schedule: ${job.schedule} | Prompt: ${job.prompt} | ${status}`);
+      const summary = job.name || job.prompt.slice(0, 40) + "…";
+      lines.push(`- ID: ${job.id.slice(0, 8)} | Schedule: ${job.schedule} | ${summary} | ${status}`);
     }
   } else {
     lines.push("## Current Cron Jobs for This Chat");
