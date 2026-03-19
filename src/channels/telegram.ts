@@ -1,10 +1,21 @@
 import { Telegraf, Markup } from "telegraf";
 import { createReadStream } from "node:fs";
+import * as https from "node:https";
 import type { Channel } from "./base.js";
 import type { ChannelType, IncomingMessage } from "../types.js";
 import type { TelegramConfig } from "../config.js";
 
 const MAX_TEXT_LENGTH = 4096;
+
+// 한국 → 유럽 Telegram 서버 레이턴시 대응
+// freeSocketTimeout: 유휴 소켓을 30초 후 폐기 (6시간 후 죽은 소켓 재사용 방지)
+const telegramAgent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 10000,
+  timeout: 30000,
+  maxFreeSockets: 2,
+  scheduling: "fifo",
+});
 
 export class TelegramChannel implements Channel {
   readonly type: ChannelType = "telegram";
@@ -15,7 +26,10 @@ export class TelegramChannel implements Channel {
   private typingIntervals = new Map<string, ReturnType<typeof setInterval>>();
 
   constructor(private config: TelegramConfig) {
-    this.bot = new Telegraf(config.botToken);
+    this.bot = new Telegraf(config.botToken, {
+      handlerTimeout: 600_000,
+      telegram: { agent: telegramAgent },
+    });
     this.setupListeners();
   }
 
