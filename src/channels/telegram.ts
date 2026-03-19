@@ -1,10 +1,18 @@
 import { Telegraf, Markup } from "telegraf";
 import { createReadStream } from "node:fs";
+import * as https from "node:https";
 import type { Channel } from "./base.js";
 import type { ChannelType, IncomingMessage } from "../types.js";
 import type { TelegramConfig } from "../config.js";
 
 const MAX_TEXT_LENGTH = 4096;
+
+// keepAlive OFF: 크론잡이 6시간 간격이라 유휴 소켓이 죽은 채 풀에 남아있음.
+// 매 요청마다 새 연결을 만드는 게 안정적.
+const telegramAgent = new https.Agent({
+  keepAlive: false,
+  timeout: 30000,
+});
 
 export class TelegramChannel implements Channel {
   readonly type: ChannelType = "telegram";
@@ -15,7 +23,10 @@ export class TelegramChannel implements Channel {
   private typingIntervals = new Map<string, ReturnType<typeof setInterval>>();
 
   constructor(private config: TelegramConfig) {
-    this.bot = new Telegraf(config.botToken);
+    this.bot = new Telegraf(config.botToken, {
+      handlerTimeout: 600_000,
+      telegram: { agent: telegramAgent },
+    });
     this.setupListeners();
   }
 
