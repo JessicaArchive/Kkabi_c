@@ -14,6 +14,29 @@ import { buildPrompt } from "../claude/context.js";
 import { enqueue } from "../claude/queue.js";
 import { getCronRunsDir, getCronsFile } from "../paths.js";
 const ERROR_ALERT_THRESHOLD = 3;
+const MAX_SEND_RETRIES = 3;
+
+async function retrySend(
+  cb: SendCallback,
+  channelType: ChannelType,
+  chatId: string,
+  text: string,
+  label: string,
+): Promise<void> {
+  for (let attempt = 1; attempt <= MAX_SEND_RETRIES; attempt++) {
+    try {
+      await cb(channelType, chatId, text);
+      return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[Cron] Send attempt ${attempt}/${MAX_SEND_RETRIES} failed (${label}): ${msg}`);
+      if (attempt < MAX_SEND_RETRIES) {
+        await new Promise((r) => setTimeout(r, 1000 * attempt));
+      }
+    }
+  }
+  console.error(`[Cron] All send attempts exhausted (${label})`);
+}
 const activeTasks = new Map<string, cron.ScheduledTask>();
 const runningJobs = new Map<string, { startMs: number; logFile: string }>();
 
@@ -264,22 +287,19 @@ async function executeCronJob(job: CronJob): Promise<void> {
       logFile,
     });
 
-    // Send result to channel
+    // Send result to channel (with retry for stale socket errors)
     const text = result.error
       ? `[Cron] Error: ${result.error}`
       : `[Cron] ${result.output}`;
 
     if (sendCallback) {
-      await sendCallback(job.channelType, job.chatId, text);
+      await retrySend(sendCallback, job.channelType, job.chatId, text, job.name);
     }
 
     // Alert on consecutive errors
     if (newConsecutiveErrors === ERROR_ALERT_THRESHOLD && sendCallback) {
-      await sendCallback(
-        job.channelType,
-        job.chatId,
-        `[Cron Alert] "${job.name}" (${job.id.slice(0, 8)}) has failed ${ERROR_ALERT_THRESHOLD} times in a row. Last error: ${result.error ?? "unknown"}`,
-      );
+      const alertText = `[Cron Alert] "${job.name}" (${job.id.slice(0, 8)}) has failed ${ERROR_ALERT_THRESHOLD} times in a row. Last error: ${result.error ?? "unknown"}`;
+      await retrySend(sendCallback, job.channelType, job.chatId, alertText, `${job.name}:alert`);
     }
 
     runningJobs.delete(job.id);
@@ -309,11 +329,8 @@ async function executeCronJob(job: CronJob): Promise<void> {
     console.error(`[Cron] Error executing job ${job.id}:`, err);
 
     if (newConsecutiveErrors === ERROR_ALERT_THRESHOLD && sendCallback) {
-      await sendCallback(
-        job.channelType,
-        job.chatId,
-        `[Cron Alert] "${job.name}" (${job.id.slice(0, 8)}) has failed ${ERROR_ALERT_THRESHOLD} times in a row. Last error: ${errorMsg}`,
-      );
+      const alertText = `[Cron Alert] "${job.name}" (${job.id.slice(0, 8)}) has failed ${ERROR_ALERT_THRESHOLD} times in a row. Last error: ${errorMsg}`;
+      await retrySend(sendCallback, job.channelType, job.chatId, alertText, `${job.name}:alert`);
     }
 
     runningJobs.delete(job.id);
