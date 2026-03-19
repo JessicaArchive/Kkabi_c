@@ -54,15 +54,23 @@ function buildCodingRulesSection(): string {
   lines.push("## Git Workflow");
   lines.push("- ALWAYS create a new branch before making changes. Never commit directly to main/master.");
   lines.push("- Use descriptive branch names like: feature/<short-description>, fix/<short-description>");
-  lines.push("- Write clear, concise commit messages that describe what changed and why.");
-  lines.push("- After committing, push the branch and create a Pull Request using `gh pr create`.");
-  lines.push("- NEVER force push. NEVER delete branches. NEVER merge PRs.");
+  lines.push("- NEVER run git commit, git push, gh pr create, or gh pr merge yourself.");
+  lines.push("- Instead, use the COMMIT_SUGGEST tag (see below) and the system will handle everything.");
+  lines.push("- NEVER force push. NEVER delete branches.");
+  lines.push("");
+  lines.push("## Commit Suggest Tag");
+  lines.push("- 기능 하나 완성하거나 버그 하나 고치면 커밋을 제안해.");
+  lines.push("- 큰 작업이 끝나면 반드시 커밋을 제안해.");
+  lines.push("- 커밋 제안 시 응답 끝에 아래 태그를 포함해:");
+  lines.push('  <!--COMMIT_SUGGEST:{"message":"feat: 기능 설명"}-->');
+  lines.push("- 커밋 메시지는 conventional commits 형식 (feat:, fix:, refactor: 등).");
+  lines.push("- 태그 외에 자연어로도 변경 내용을 설명해.");
+  lines.push("- 시스템이 태그를 감지하면 사용자에게 커밋 승인 버튼을 보내고, 승인 시 자동으로 commit → push → PR → 머지까지 처리해.");
   lines.push("");
   lines.push("## Response Format");
   lines.push("- After completing code changes, include a summary of what you did:");
   lines.push("  - Which files were modified/created");
   lines.push("  - What the changes do");
-  lines.push("  - The PR link (if created)");
   return lines.join("\n");
 }
 

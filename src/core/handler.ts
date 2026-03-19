@@ -14,6 +14,8 @@ import { filterIncoming, type FilterConfig } from "../interbot/filter.js";
 import { parseReviewTags } from "./reviewParser.js";
 import { executeReviewRequests } from "./reviewExecutor.js";
 import { appendGroupChatLog } from "../interbot/log.js";
+import { parseCommitTags } from "./commitParser.js";
+import { executeCommitSuggestion } from "./commitExecutor.js";
 
 function resolveWorkingDir(chatId: string, channelType: ChannelType): string | undefined {
   const config = getConfig();
@@ -212,7 +214,19 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
         }
       }
 
+      // Post-process commit suggest tags
+      const { suggestions: commitSuggestions, cleanedResponse: commitCleaned } =
+        parseCommitTags(response);
+      if (commitSuggestions.length > 0) {
+        response = commitCleaned;
+      }
+
       await channel.sendText(chatId, response, threadId);
+
+      // Handle commit suggestions (after sending main response)
+      for (const suggestion of commitSuggestions) {
+        await executeCommitSuggestion(suggestion, channel, chatId, threadId);
+      }
 
       // Save conversation
       saveMessage({
