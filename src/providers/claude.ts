@@ -1,14 +1,38 @@
 import { spawn } from "node:child_process";
-import { createWriteStream, mkdirSync } from "node:fs";
+import { createWriteStream, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { getConfig } from "../config.js";
+import { getSessionsFile } from "../paths.js";
 import type { Provider, RunOptions, RunResult, RunHandle } from "./base.js";
 
 const MAX_RETRIES = 2;
 const CRASH_EXIT_CODE = 3221225794; // Windows access violation
 
-// Session ID cache: workingDir -> last Claude session ID
+// Session ID cache: workingDir -> last Claude session ID (file-backed)
 const sessionCache = new Map<string, string>();
+
+function loadSessionCache(): void {
+  try {
+    const data = JSON.parse(readFileSync(getSessionsFile(), "utf-8"));
+    for (const [k, v] of Object.entries(data)) {
+      if (typeof v === "string") sessionCache.set(k, v);
+    }
+  } catch {
+    // 파일 없거나 파싱 실패 — 빈 캐시로 시작
+  }
+}
+
+function persistSessionCache(): void {
+  try {
+    const obj = Object.fromEntries(sessionCache);
+    writeFileSync(getSessionsFile(), JSON.stringify(obj, null, 2));
+  } catch (err) {
+    console.warn("[Claude] Failed to persist session cache:", err);
+  }
+}
+
+// 부팅 시 파일에서 복원
+loadSessionCache();
 
 // Idle timeout: kill process if no new message for this duration (ms)
 const SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 min
@@ -116,6 +140,7 @@ export class ClaudeProvider implements Provider {
           // Extract and cache session ID for future --resume
           if (event.session_id) {
             sessionCache.set(sessionKey, event.session_id);
+            persistSessionCache();
           }
 
           switch (event.type) {
@@ -187,7 +212,10 @@ export class ClaudeProvider implements Provider {
           try {
             const event = JSON.parse(lineBuf);
             if (event.result) resultText = event.result;
-            if (event.session_id) sessionCache.set(sessionKey, event.session_id);
+            if (event.session_id) {
+              sessionCache.set(sessionKey, event.session_id);
+              persistSessionCache();
+            }
           } catch {
             resultText += lineBuf;
           }
@@ -197,6 +225,7 @@ export class ClaudeProvider implements Provider {
         idleTimers.set(sessionKey, setTimeout(() => {
           console.log(`[Claude] Session idle timeout for ${sessionKey}, clearing cache`);
           sessionCache.delete(sessionKey);
+          persistSessionCache();
           idleTimers.delete(sessionKey);
         }, SESSION_IDLE_TIMEOUT_MS));
 
@@ -208,6 +237,7 @@ export class ClaudeProvider implements Provider {
           if (prevSessionId && (error.includes("session") || error.includes("resume"))) {
             console.log(`[Claude] Session ${prevSessionId.slice(0, 12)} expired, clearing`);
             sessionCache.delete(sessionKey);
+            persistSessionCache();
           }
           resolve({ output: resultText.trim(), error, timedOut: false, toolsUsed });
         }
@@ -236,7 +266,9 @@ export function clearSession(workingDir: string): boolean {
   const key = workingDir.startsWith("~")
     ? workingDir.replace(/^~/, process.env.HOME ?? "")
     : workingDir;
-  return sessionCache.delete(key);
+  const deleted = sessionCache.delete(key);
+  if (deleted) persistSessionCache();
+  return deleted;
 }
 
 function classifyError(stderr: string, code: number | null): string {
