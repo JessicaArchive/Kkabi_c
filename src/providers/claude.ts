@@ -7,6 +7,13 @@ import type { Provider, RunOptions, RunResult, RunHandle } from "./base.js";
 const MAX_RETRIES = 2;
 const CRASH_EXIT_CODE = 3221225794; // Windows access violation
 
+// Session ID cache: workingDir -> last Claude session ID
+const sessionCache = new Map<string, string>();
+
+// Idle timeout: kill process if no new message for this duration (ms)
+const SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 min
+const idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
 export class ClaudeProvider implements Provider {
   readonly name = "claude";
 
@@ -41,7 +48,17 @@ export class ClaudeProvider implements Provider {
 
     const isRoot = process.getuid?.() === 0;
 
+    // Build args: use -p with --resume for session continuity
     const args = ["-p", prompt, "--output-format", "stream-json", "--verbose"];
+
+    // Resume previous session if exists for this workingDir
+    const sessionKey = cwd;
+    const prevSessionId = sessionCache.get(sessionKey);
+    if (prevSessionId) {
+      args.push("--resume", prevSessionId);
+      console.log(`[Claude] Resuming session ${prevSessionId.slice(0, 12)}... for ${sessionKey}`);
+    }
+
     if (isRoot) {
       args.push(
         "--allowedTools",
@@ -82,6 +99,10 @@ export class ClaudeProvider implements Provider {
     let lineBuf = "";
     const toolsUsed: string[] = [];
 
+    // Reset idle timer for this workingDir
+    const existingTimer = idleTimers.get(sessionKey);
+    if (existingTimer) clearTimeout(existingTimer);
+
     proc.stdout?.on("data", (chunk: Buffer) => {
       lineBuf += chunk.toString();
       const lines = lineBuf.split("\n");
@@ -91,6 +112,12 @@ export class ClaudeProvider implements Provider {
         if (!line.trim()) continue;
         try {
           const event = JSON.parse(line);
+
+          // Extract and cache session ID for future --resume
+          if (event.session_id) {
+            sessionCache.set(sessionKey, event.session_id);
+          }
+
           switch (event.type) {
             case "assistant":
               if (event.message?.content) {
@@ -160,15 +187,28 @@ export class ClaudeProvider implements Provider {
           try {
             const event = JSON.parse(lineBuf);
             if (event.result) resultText = event.result;
+            if (event.session_id) sessionCache.set(sessionKey, event.session_id);
           } catch {
             resultText += lineBuf;
           }
         }
 
+        // Set idle timer — clear session cache after prolonged inactivity
+        idleTimers.set(sessionKey, setTimeout(() => {
+          console.log(`[Claude] Session idle timeout for ${sessionKey}, clearing cache`);
+          sessionCache.delete(sessionKey);
+          idleTimers.delete(sessionKey);
+        }, SESSION_IDLE_TIMEOUT_MS));
+
         if (code === 0) {
           resolve({ output: resultText.trim(), timedOut: false, toolsUsed });
         } else {
           const error = classifyError(stderr, code);
+          // If session expired or invalid, clear cache and retry without --resume
+          if (prevSessionId && (error.includes("session") || error.includes("resume"))) {
+            console.log(`[Claude] Session ${prevSessionId.slice(0, 12)} expired, clearing`);
+            sessionCache.delete(sessionKey);
+          }
           resolve({ output: resultText.trim(), error, timedOut: false, toolsUsed });
         }
       });
@@ -185,6 +225,18 @@ export class ClaudeProvider implements Provider {
       cancel: () => { proc.kill("SIGTERM"); },
     };
   }
+}
+
+// Expose session cache for external inspection (dashboard, etc.)
+export function getSessionCache(): ReadonlyMap<string, string> {
+  return sessionCache;
+}
+
+export function clearSession(workingDir: string): boolean {
+  const key = workingDir.startsWith("~")
+    ? workingDir.replace(/^~/, process.env.HOME ?? "")
+    : workingDir;
+  return sessionCache.delete(key);
 }
 
 function classifyError(stderr: string, code: number | null): string {
