@@ -1,17 +1,22 @@
 import { Telegraf, Markup } from "telegraf";
 import { createReadStream } from "node:fs";
 import * as https from "node:https";
+import { lookup } from "node:dns";
 import type { Channel } from "./base.js";
 import type { ChannelType, IncomingMessage } from "../types.js";
 import type { TelegramConfig } from "../config.js";
 
 const MAX_TEXT_LENGTH = 4096;
 
-// keepAlive OFF: 크론잡이 6시간 간격이라 유휴 소켓이 죽은 채 풀에 남아있음.
-// 매 요청마다 새 연결을 만드는 게 안정적.
+// Node.js 22의 autoSelectFamily가 IPv6를 먼저 시도 → 텔레그램 IPv6 연결 실패 → ETIMEDOUT.
+// IPv4 전용 lookup으로 우회.
 const telegramAgent = new https.Agent({
   keepAlive: false,
   timeout: 30000,
+  lookup: (hostname, options, cb) => {
+    const opts = typeof options === "object" ? options : {};
+    lookup(hostname, { ...opts, family: 4 }, cb as any);
+  },
 });
 
 export class TelegramChannel implements Channel {
@@ -26,6 +31,16 @@ export class TelegramChannel implements Channel {
     this.bot = new Telegraf(config.botToken, {
       handlerTimeout: 600_000,
       telegram: { agent: telegramAgent },
+    });
+    this.bot.catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("timed out") || msg.includes("ETIMEDOUT") || msg.includes("ECONNRESET")) {
+        console.warn("[Telegram] Polling recoverable error (will retry):", msg.slice(0, 120));
+      } else if (msg.includes("409")) {
+        console.error("[Telegram] Duplicate bot instance detected — another process is polling with the same token");
+      } else {
+        console.error("[Telegram] Bot error:", msg.slice(0, 200));
+      }
     });
     this.setupListeners();
   }
@@ -96,9 +111,41 @@ export class TelegramChannel implements Channel {
   async start(): Promise<void> {
     const botInfo = await this.bot.telegram.getMe();
     this.botUsername = botInfo.username ?? "";
-    // launch() never resolves (it keeps polling), so don't await it
-    this.bot.launch({ dropPendingUpdates: true });
+    await this.bot.telegram.deleteWebhook({ drop_pending_updates: true });
+    this.launchWithRetry();
     console.log(`[Telegram] Bot started: @${this.botUsername}`);
+  }
+
+  private launchWithRetry(attempt = 0): void {
+    const maxRetries = 5;
+    // launch()는 resolve되지 않으므로 (계속 폴링) .catch로 에러만 처리
+    this.bot.launch({ dropPendingUpdates: true }).catch(async (err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("409") && attempt < maxRetries) {
+        const delay = (attempt + 1) * 3000;
+        console.warn(`[Telegram] @${this.botUsername} 409 conflict, retry ${attempt + 1}/${maxRetries} in ${delay}ms...`);
+        await new Promise((r) => setTimeout(r, delay));
+        // 새 Telegraf 인스턴스 필요 — 기존 polling 인스턴스는 재사용 불가
+        this.bot = new Telegraf(this.config.botToken, {
+          handlerTimeout: 600_000,
+          telegram: { agent: telegramAgent },
+        });
+        this.bot.catch((e: unknown) => {
+          const m = e instanceof Error ? e.message : String(e);
+          if (m.includes("timed out") || m.includes("ETIMEDOUT") || m.includes("ECONNRESET")) {
+            console.warn("[Telegram] Polling recoverable error (will retry):", m.slice(0, 120));
+          } else if (m.includes("409")) {
+            console.error("[Telegram] Duplicate bot instance detected");
+          } else {
+            console.error("[Telegram] Bot error:", m.slice(0, 200));
+          }
+        });
+        this.setupListeners();
+        this.launchWithRetry(attempt + 1);
+      } else {
+        console.error(`[Telegram] @${this.botUsername} polling stopped:`, msg.slice(0, 150));
+      }
+    });
   }
 
   getBotUsername(): string {
@@ -118,11 +165,37 @@ export class TelegramChannel implements Channel {
       const opts: any = {};
       if (threadId) opts.message_thread_id = Number(threadId);
 
-      const result = await this.bot.telegram.sendMessage(Number(chatId), chunk, opts);
-      if (!firstMsgId) firstMsgId = String(result.message_id);
+      const result = await this.trySend(Number(chatId), chunk, opts);
+      if (result && !firstMsgId) firstMsgId = String(result.message_id);
     }
 
     return firstMsgId;
+  }
+
+  private async trySend(
+    chatId: number,
+    text: string,
+    opts: any,
+    retries = 2,
+  ): Promise<{ message_id: number } | null> {
+    for (let i = 0; i <= retries; i++) {
+      try {
+        return await this.bot.telegram.sendMessage(chatId, text, opts);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const isRetryable = msg.includes("timed out") || msg.includes("ETIMEDOUT")
+          || msg.includes("ECONNRESET") || msg.includes("429");
+        if (!isRetryable || i === retries) {
+          console.error(`[Telegram] sendMessage failed (attempt ${i + 1}):`, msg.slice(0, 150));
+          if (i === retries) return null;
+          throw err;
+        }
+        const delay = (i + 1) * 2000;
+        console.warn(`[Telegram] Send retry ${i + 1}/${retries} in ${delay}ms...`);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+    return null;
   }
 
   async sendFile(chatId: string, filePath: string, threadId?: string): Promise<void> {

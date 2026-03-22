@@ -16,6 +16,7 @@ import { executeReviewRequests } from "./reviewExecutor.js";
 import { appendGroupChatLog } from "../interbot/log.js";
 import { parseCommitTags } from "./commitParser.js";
 import { executeCommitSuggestion } from "./commitExecutor.js";
+import { parseFileTags } from "./fileParser.js";
 
 function resolveWorkingDir(chatId: string, channelType: ChannelType): string | undefined {
   const config = getConfig();
@@ -98,6 +99,11 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
     if (isCommand(text)) {
       const result = await executeCommand(text, chatId, msg.channel);
       await channel.sendText(chatId, result.text, threadId);
+      if (result.files) {
+        for (const filePath of result.files) {
+          await channel.sendFile(chatId, filePath, threadId);
+        }
+      }
       return;
     }
 
@@ -221,7 +227,19 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
         response = commitCleaned;
       }
 
+      // Post-process file send tags
+      const { files: filesToSend, cleanedResponse: fileCleaned } =
+        parseFileTags(response);
+      if (filesToSend.length > 0) {
+        response = fileCleaned;
+      }
+
       await channel.sendText(chatId, response, threadId);
+
+      // Send requested files (after main response)
+      for (const file of filesToSend) {
+        await channel.sendFile(chatId, file.path, threadId);
+      }
 
       // Handle commit suggestions (after sending main response)
       for (const suggestion of commitSuggestions) {

@@ -131,6 +131,18 @@ function buildCapabilitiesSection(chatId: string): string {
     lines.push("");
   }
 
+  // File sending capability
+  lines.push("## File Sending");
+  lines.push("When the user asks you to send, share, or show a file, include this hidden tag at the END of your response:");
+  lines.push('  <!--SEND_FILE:{"path":"/absolute/path/to/file"}-->');
+  lines.push("The system will send the file as a Telegram document attachment.");
+  lines.push("Rules:");
+  lines.push("- Use ABSOLUTE paths (expand ~ to full home path).");
+  lines.push("- You can include multiple SEND_FILE tags to send multiple files.");
+  lines.push("- ALWAYS include a natural language response alongside the tag.");
+  lines.push("- Only use this for actual files the user requested. Verify the file exists before including the tag.");
+  lines.push("");
+
   // Available agents
   const agents = loadAgents();
   if (agents.length > 0) {

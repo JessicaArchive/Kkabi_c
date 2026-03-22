@@ -1,5 +1,5 @@
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, statSync } from "node:fs";
+import { resolve, basename } from "node:path";
 import type { CommandResult, ChannelType } from "../types.js";
 import { getConfig } from "../config.js";
 import { getRecentConversation, getRecentExecutions } from "../db/store.js";
@@ -83,6 +83,8 @@ export async function executeCommand(
       return cmdCron(args, chatId, channel);
     case "agent":
       return cmdAgent(args);
+    case "file":
+      return cmdFile(args);
     case "help":
       return { text: HELP_TEXT + getProjectHelpText() };
     default:
@@ -389,6 +391,25 @@ function cmdAgentAdd(raw: string): CommandResult {
   return { text: `Agent added: ${id} ("${name}")` };
 }
 
+// --- !file ---
+
+function cmdFile(args: string): CommandResult {
+  if (!args) return { text: "Usage: !file <path>" };
+  const expanded = expandHome(args.trim());
+  const resolved = resolve(workingDir, expanded);
+
+  if (!existsSync(resolved)) {
+    return { text: `File not found: ${resolved}` };
+  }
+
+  const stat = statSync(resolved);
+  if (stat.isDirectory()) {
+    return { text: `Cannot send a directory: ${resolved}` };
+  }
+
+  return { text: `Sending ${basename(resolved)}...`, files: [resolved] };
+}
+
 // --- Utilities ---
 
 function formatSystemInfo(): string {
@@ -432,6 +453,7 @@ const HELP_TEXT = `Kkabi Commands
 !agent add <id> "<name>" [--model M] [--dir D]  Add agent
 !agent remove <id> Remove agent
 !agent reload      Reload agents from file
+!file <path>       Send a file to chat
 !help              Show this help
 
 Telegram aliases: /status /help`;

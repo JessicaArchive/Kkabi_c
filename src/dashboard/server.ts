@@ -353,7 +353,24 @@ export function createDashboardServer(port = 3000): void {
   const httpServer = createServer(app);
   setupChatWebSocket(httpServer);
 
-  httpServer.listen(port, () => {
-    console.log(`[Dashboard] http://localhost:${port}/dashboard`);
+  // 포트 사용 가능 여부를 먼저 확인 후 listen
+  const tester = createServer();
+  tester.once("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      console.warn(`[Dashboard] Port ${port} already in use — skipping dashboard`);
+    } else {
+      console.error("[Dashboard] Port check error:", err.message);
+    }
   });
+  tester.once("listening", () => {
+    tester.close(() => {
+      httpServer.on("error", (err: NodeJS.ErrnoException) => {
+        console.error("[Dashboard] Server error:", err.message);
+      });
+      httpServer.listen(port, () => {
+        console.log(`[Dashboard] http://localhost:${port}/dashboard`);
+      });
+    });
+  });
+  tester.listen(port);
 }

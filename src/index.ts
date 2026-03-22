@@ -17,6 +17,8 @@ import { getDbPath, getLocalOutputLogPath } from "./paths.js";
 import type { Channel } from "./channels/base.js";
 import { setQueueLimits } from "./claude/queue.js";
 import { loadBotRegistry, registerBotUsername } from "./interbot/registry.js";
+import { getRecentConversation } from "./db/store.js";
+import { enqueue } from "./claude/queue.js";
 import type { ChannelType } from "./types.js";
 
 const channels = new Map<ChannelType, Channel>();
@@ -40,6 +42,42 @@ function localSend(text: string): void {
   console.log(line);
   mkdirSync(dirname(localOutputLog), { recursive: true });
   appendFileSync(localOutputLog, line + "\n", "utf-8");
+}
+
+async function sendStartupGreeting(
+  channel: Channel,
+  chatId: string,
+  provider: string,
+): Promise<void> {
+  const recent = getRecentConversation(chatId, 6);
+  if (recent.length === 0) {
+    await channel.sendText(chatId, "다시 시작됐어! 뭐 도와줄까?");
+    return;
+  }
+
+  const history = recent
+    .map((m) => `${m.role === "user" ? "사용자" : "봇"}: ${m.content.slice(0, 150)}`)
+    .join("\n");
+
+  const prompt =
+    `너는 방금 재시작된 텔레그램 봇이야. 아래는 재시작 전 마지막 대화 내역이야.\n\n` +
+    `${history}\n\n` +
+    `이 맥락을 바탕으로 사용자한테 자연스럽게 인사해. ` +
+    `"~했었지? ~할까?" 같은 톤으로, 1-2문장으로 짧게. ` +
+    `대화 내용을 구체적으로 언급해.`;
+
+  const { promise } = enqueue({ prompt, chatId, channel: "telegram", provider: provider as any });
+  const result = await promise;
+  if (result.output && !result.error) {
+    await channel.sendText(chatId, result.output);
+  } else {
+    // Claude 실패 시 폴백
+    const lastUserMsg = recent.filter((m) => m.role === "user").pop();
+    const preview = lastUserMsg ? lastUserMsg.content.slice(0, 80) : "";
+    await channel.sendText(chatId, preview
+      ? `다시 시작됐어! 아까 "${preview}" 얘기하고 있었지?`
+      : "다시 시작됐어! 뭐 도와줄까?");
+  }
 }
 
 async function main(): Promise<void> {
@@ -132,6 +170,15 @@ async function main(): Promise<void> {
   }
 
   console.log("Kkabi is ready!");
+
+  // 시작 알림: 마지막 대화 맥락으로 자연스럽게 인사
+  const tg = channels.get("telegram");
+  if (tg && config.channels.telegram?.allowedChatIds?.length) {
+    const chatId = String(config.channels.telegram.allowedChatIds[0]);
+    sendStartupGreeting(tg, chatId, provider).catch((err) => {
+      console.error("[Startup greeting] Failed:", err);
+    });
+  }
 }
 
 // Graceful shutdown
@@ -178,6 +225,12 @@ process.on("uncaughtException", (err) => {
 });
 
 process.on("unhandledRejection", (reason) => {
+  // Telegraf polling timeouts are normal recovery — don't spam crash.log
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  if (msg.includes("timed out after 90000") || msg.includes("ETIMEDOUT")) {
+    console.warn("[Polling] Recoverable timeout (auto-retry):", msg.slice(0, 80));
+    return;
+  }
   logCrash("unhandledRejection", reason);
   // Don't exit — keep the bot alive
 });

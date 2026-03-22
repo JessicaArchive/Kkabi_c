@@ -12,8 +12,8 @@
 
 set -euo pipefail
 
-# Ensure Homebrew binaries (tmux, fnm, etc.) are in PATH.
-export PATH="/opt/homebrew/bin:$PATH"
+# Ensure Homebrew and system binaries (git, tmux, fnm, etc.) are in PATH.
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIGS_DIR="$SCRIPT_DIR/configs"
