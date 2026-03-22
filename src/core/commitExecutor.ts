@@ -31,31 +31,8 @@ export async function executeCommitSuggestion(
   const runner = config.runner ?? config.claude;
   const cwd = runner.workingDir;
 
-  // 1단계: 커밋+PR 승인 요청
-  const commitApproved = await channel.sendConfirm(
-    chatId,
-    `커밋할까?\n\n${suggestion.message}`,
-    threadId,
-  );
-
-  if (!commitApproved) return;
-
   const result = await doCommitAndPR(suggestion.message, cwd);
   await channel.sendText(chatId, result.message, threadId);
-
-  if (!result.success || !result.prNumber || !result.prUrl) return;
-
-  // 2단계: 머지 승인 요청
-  const mergeApproved = await channel.sendConfirm(
-    chatId,
-    `PR #${result.prNumber} 머지할까? (squash)\n${result.prUrl}`,
-    threadId,
-  );
-
-  if (!mergeApproved) return;
-
-  const mergeResult = await doMerge(result.prNumber, cwd);
-  await channel.sendText(chatId, mergeResult.message, threadId);
 }
 
 async function doCommitAndPR(
@@ -134,15 +111,3 @@ async function doCommitAndPR(
   }
 }
 
-async function doMerge(prNumber: number, cwd: string): Promise<ExecResult> {
-  try {
-    await run(
-      "gh",
-      ["pr", "merge", String(prNumber), "--squash", "--delete-branch"],
-      cwd,
-    );
-    return { success: true, message: `✅ PR #${prNumber} squash 머지 완료` };
-  } catch (err: any) {
-    return { success: false, message: `❌ 머지 실패: ${err.message}` };
-  }
-}

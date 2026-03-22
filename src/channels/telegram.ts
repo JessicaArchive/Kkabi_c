@@ -1,4 +1,4 @@
-import { Telegraf, Markup } from "telegraf";
+import { Telegraf } from "telegraf";
 import { createReadStream } from "node:fs";
 import * as https from "node:https";
 import { lookup } from "node:dns";
@@ -7,6 +7,9 @@ import type { ChannelType, IncomingMessage } from "../types.js";
 import type { TelegramConfig } from "../config.js";
 
 const MAX_TEXT_LENGTH = 4096;
+
+const AFFIRM_RE = /^(응|ㅇ|ㅇㅇ|네|넹|넵|예|yes|y|ok|ㅇㅋ|확인|고|ㄱ|ㄱㄱ|해|해줘|ㅇㅇㅇ|당연|물론|승인|approve)$/i;
+const DENY_RE = /^(아니|ㄴ|ㄴㄴ|노|no|n|취소|안해|하지마|deny|거부|ㄴㅇ)$/i;
 
 // Node.js 22의 autoSelectFamily가 IPv6를 먼저 시도 → 텔레그램 IPv6 연결 실패 → ETIMEDOUT.
 // IPv4 전용 lookup으로 우회.
@@ -58,10 +61,28 @@ export class TelegramChannel implements Channel {
         return;
       }
 
+      // 텍스트 기반 승인 체크 — pendingConfirm이 있으면 자연어 매칭
+      const strChatId = String(chatId);
+      const resolver = this.pendingConfirms.get(strChatId);
+      if (resolver) {
+        const text = msg.text.trim();
+        if (AFFIRM_RE.test(text)) {
+          this.pendingConfirms.delete(strChatId);
+          resolver(true);
+          return;
+        }
+        if (DENY_RE.test(text)) {
+          this.pendingConfirms.delete(strChatId);
+          resolver(false);
+          return;
+        }
+        // 패턴에 안 맞으면 일반 메시지로 처리 (fall through)
+      }
+
       const incoming: IncomingMessage = {
         id: String(msg.message_id),
         channel: "telegram",
-        chatId: String(chatId),
+        chatId: strChatId,
         senderId: String(msg.from.id),
         senderName: msg.from.username ?? msg.from.first_name ?? "unknown",
         text: msg.text,
@@ -70,44 +91,20 @@ export class TelegramChannel implements Channel {
       };
 
       if (this.handler) {
-        this.startTyping(String(chatId));
+        this.startTyping(strChatId);
         try {
           await this.handler(incoming);
         } catch (err) {
           console.error("[Telegram] Handler error:", err);
         } finally {
-          this.stopTyping(String(chatId));
+          this.stopTyping(strChatId);
         }
       }
     });
 
-    // Handle confirm callback queries
+    // 레거시 callback_query 처리 (이전에 보낸 버튼이 남아있을 수 있음)
     this.bot.on("callback_query", async (ctx) => {
-      const data = (ctx.callbackQuery as any).data as string | undefined;
-      console.log(`[Telegram] callback_query received: ${data}`);
-      if (!data) return;
-
-      await ctx.answerCbQuery();
-
-      const [action, confirmId] = data.split(":");
-      console.log(`[Telegram] action=${action}, confirmId=${confirmId}, pending=${this.pendingConfirms.size}`);
-      const resolver = this.pendingConfirms.get(confirmId);
-      if (resolver) {
-        console.log(`[Telegram] Resolving confirm ${confirmId} → ${action}`);
-        resolver(action === "approve");
-        this.pendingConfirms.delete(confirmId);
-
-        // Update the message to show result
-        const label = action === "approve" ? "Approved" : "Denied";
-        try {
-          await ctx.editMessageReplyMarkup(undefined);
-          await ctx.editMessageText(
-            (ctx.callbackQuery as any).message.text + `\n\n→ ${label}`,
-          );
-        } catch {
-          // ignore edit errors
-        }
-      }
+      await ctx.answerCbQuery("텍스트로 응답해주세요 (응/아니)");
     });
   }
 
@@ -234,26 +231,23 @@ export class TelegramChannel implements Channel {
   }
 
   async sendConfirm(chatId: string, text: string, threadId?: string): Promise<boolean> {
-    const confirmId = String(Date.now());
     const opts: any = {};
     if (threadId) opts.message_thread_id = Number(threadId);
 
-    await this.bot.telegram.sendMessage(Number(chatId), text, {
-      ...opts,
-      ...Markup.inlineKeyboard([
-        Markup.button.callback("Approve", `approve:${confirmId}`),
-        Markup.button.callback("Deny", `deny:${confirmId}`),
-      ]),
-    });
+    await this.bot.telegram.sendMessage(
+      Number(chatId),
+      `${text}\n\n(응/ㅇㅇ → 승인, 아니/ㄴ → 거부)`,
+      opts,
+    );
 
     return new Promise<boolean>((resolve) => {
-      this.pendingConfirms.set(confirmId, resolve);
+      this.pendingConfirms.set(chatId, resolve);
 
       // 2분 타임아웃 — 응답 없으면 자동 거부
       setTimeout(() => {
-        if (this.pendingConfirms.has(confirmId)) {
-          console.log(`[Telegram] Confirm ${confirmId} timed out, auto-denying`);
-          this.pendingConfirms.delete(confirmId);
+        if (this.pendingConfirms.has(chatId)) {
+          console.log(`[Telegram] Confirm for chat ${chatId} timed out, auto-denying`);
+          this.pendingConfirms.delete(chatId);
           resolve(false);
         }
       }, 120_000);
