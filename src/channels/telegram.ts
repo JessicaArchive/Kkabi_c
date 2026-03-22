@@ -84,13 +84,16 @@ export class TelegramChannel implements Channel {
     // Handle confirm callback queries
     this.bot.on("callback_query", async (ctx) => {
       const data = (ctx.callbackQuery as any).data as string | undefined;
+      console.log(`[Telegram] callback_query received: ${data}`);
       if (!data) return;
 
       await ctx.answerCbQuery();
 
       const [action, confirmId] = data.split(":");
+      console.log(`[Telegram] action=${action}, confirmId=${confirmId}, pending=${this.pendingConfirms.size}`);
       const resolver = this.pendingConfirms.get(confirmId);
       if (resolver) {
+        console.log(`[Telegram] Resolving confirm ${confirmId} → ${action}`);
         resolver(action === "approve");
         this.pendingConfirms.delete(confirmId);
 
@@ -245,6 +248,15 @@ export class TelegramChannel implements Channel {
 
     return new Promise<boolean>((resolve) => {
       this.pendingConfirms.set(confirmId, resolve);
+
+      // 2분 타임아웃 — 응답 없으면 자동 거부
+      setTimeout(() => {
+        if (this.pendingConfirms.has(confirmId)) {
+          console.log(`[Telegram] Confirm ${confirmId} timed out, auto-denying`);
+          this.pendingConfirms.delete(confirmId);
+          resolve(false);
+        }
+      }, 120_000);
     });
   }
 
