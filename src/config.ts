@@ -79,6 +79,7 @@ const RunnerConfigSchema = z.object({
   workingDir: z.string().default("~"),
   projects: z.record(z.string(), z.string()).default({}),
   disallowedTools: z.array(z.string()).default([]),
+  model: z.string().optional(),
 });
 
 const ProviderSchema = z.enum(["claude", "codex"]).default("claude");

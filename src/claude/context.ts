@@ -4,8 +4,11 @@ import { loadPersona, getLang } from "../memory/persona.js";
 import { listCrons } from "../scheduler/cron.js";
 import { loadAgents } from "../agents/store.js";
 import { getConfig } from "../config.js";
+import { readFileSync, readdirSync } from "fs";
+import { join } from "path";
+import { homedir } from "os";
 
-export function buildPrompt(userMessage: string, chatId: string): string {
+export function buildPrompt(userMessage: string, chatId: string, workingDir?: string): string {
   const parts: string[] = [];
 
   // System persona
@@ -32,9 +35,24 @@ export function buildPrompt(userMessage: string, chatId: string): string {
     parts.push(`[MEMORY]\n${memory}`);
   }
 
-  // Recent conversation context
+  // Recent conversation context — compare with terminal session logs
   const recent = getRecentConversation(chatId, 20);
-  if (recent.length > 0) {
+  const lastMsgTs = recent.length > 0 ? recent[recent.length - 1].timestamp : 0;
+  const sessionLog = getLatestSessionLog(workingDir);
+
+  if (sessionLog && sessionLog.timestamp > lastMsgTs) {
+    // Terminal session log is more recent — include it as context
+    const history = recent.length > 0
+      ? recent
+          .map((r) => `${r.role === "user" ? "User" : "Assistant"}: ${r.content}`)
+          .join("\n")
+      : "";
+    const sessionSection = `[RECENT TERMINAL SESSION]\n아래는 터미널에서 진행된 최근 세션 요약이야. 텔레그램 대화보다 최신이니 이 맥락을 우선 참고해.\n\n${sessionLog.content}`;
+    if (history) {
+      parts.push(`[CONVERSATION HISTORY]\n${history}`);
+    }
+    parts.push(sessionSection);
+  } else if (recent.length > 0) {
     const history = recent
       .map((r) => `${r.role === "user" ? "User" : "Assistant"}: ${r.content}`)
       .join("\n");
@@ -45,6 +63,50 @@ export function buildPrompt(userMessage: string, chatId: string): string {
   parts.push(`[CURRENT MESSAGE]\nUser: ${userMessage}`);
 
   return parts.join("\n\n");
+}
+
+function getLatestSessionLog(workingDir?: string): { content: string; timestamp: number } | null {
+  try {
+    const baseDir = join(homedir(), "Obsidian", "Kkabi", "sessions");
+
+    // If workingDir given, derive slug = first path component relative to home
+    // e.g. ~/kkabi-trading/src → "kkabi-trading"
+    const projectSlug = workingDir
+      ? (workingDir.startsWith("~/")
+          ? workingDir.slice(2).split("/")[0]
+          : workingDir.replace(homedir() + "/", "").split("/")[0])
+      : null;
+    const sessionsDir = projectSlug
+      ? join(baseDir, projectSlug)
+      : baseDir;
+
+    let dir = sessionsDir;
+    let files = [];
+    try {
+      files = readdirSync(dir).filter((f) => f.endsWith(".md")).sort().reverse();
+    } catch {
+      // Subdirectory doesn't exist yet — fall back to base dir
+      dir = baseDir;
+      files = readdirSync(dir).filter((f) => f.endsWith(".md")).sort().reverse();
+    }
+
+    if (files.length === 0) return null;
+
+    const latestFile = files[0];
+    // Parse timestamp from filename: YYYY-MM-DD-HH.md
+    const match = latestFile.match(/^(\d{4})-(\d{2})-(\d{2})-(\d{2})\.md$/);
+    if (!match) return null;
+
+    const [, year, month, day, hour] = match;
+    const timestamp = new Date(
+      Number(year), Number(month) - 1, Number(day), Number(hour)
+    ).getTime();
+
+    const content = readFileSync(join(dir, latestFile), "utf-8");
+    return { content, timestamp };
+  } catch {
+    return null;
+  }
 }
 
 function buildCodingRulesSection(): string {

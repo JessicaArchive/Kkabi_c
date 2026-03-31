@@ -40,11 +40,13 @@ function resolveWorkingDir(chatId: string, channelType: ChannelType): string | u
 
 export interface HandlerOptions {
   provider?: ProviderType;
+  model?: string;
   botUsername?: string;
 }
 
 export function createHandler(channel: Channel, options?: HandlerOptions) {
   const provider = options?.provider ?? "claude";
+  const model = options?.model;
   return async (msg: IncomingMessage): Promise<void> => {
     const { chatId, text, threadId, senderName } = msg;
 
@@ -124,10 +126,10 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
     }
 
     // Build prompt and resolve workingDir
-    const prompt = buildPrompt(text, chatId);
     const workingDir = resolveWorkingDir(chatId, msg.channel);
+    const prompt = buildPrompt(text, chatId, workingDir);
 
-    const { promise, position } = enqueue({ prompt, chatId, channel: msg.channel, workingDir, provider });
+    const { promise, position } = enqueue({ prompt, chatId, channel: msg.channel, workingDir, provider, model });
 
     if (position > 1) {
       await channel.sendText(chatId, `Waiting in queue... (position ${position})`, threadId);

@@ -89,9 +89,10 @@ async function main(): Promise<void> {
   syncWorkingDirFromConfig();
   initProjectCommands(getWorkingDir(), config.projectType);
   const provider = config.provider ?? "claude";
+  const runner = config.runner ?? config.claude;
+  const model = config.runner?.model;
 
   // Set queue limits from runner config
-  const runner = config.runner ?? config.claude;
   setQueueLimits(
     runner.maxConcurrent,
     (config.runner as any)?.maxPerWorkingDir ?? 1,
@@ -142,7 +143,7 @@ async function main(): Promise<void> {
       console.log(`[Interbot] Registered @${botUsername}`);
     }
 
-    const handler = createHandler(telegram, { provider, botUsername });
+    const handler = createHandler(telegram, { provider, model, botUsername });
     telegram.onMessage(handler);
     channels.set("telegram", telegram);
   }
