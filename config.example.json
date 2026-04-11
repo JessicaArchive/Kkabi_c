@@ -1,7 +1,16 @@
 {
   "channels": {
-    "slack": {
+    "telegram": {
       "enabled": true,
+      "botToken": "1234567890:AAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "_botToken_hint": "BotFather에서 /newbot으로 발급 — t.me/BotFather",
+      "allowedChatIds": [
+        123456789
+      ],
+      "_allowedChatIds_hint": "허용할 사용자의 Telegram chat ID — @userinfobot에 메시지 보내면 확인 가능"
+    },
+    "slack": {
+      "enabled": false,
       "botToken": "xoxb-your-bot-token",
       "appToken": "xapp-your-app-token",
       "allowedChannels": []
@@ -17,8 +26,13 @@
   "claude": {
     "timeoutMs": 300000,
     "maxConcurrent": 1,
-    "workingDir": "~"
+    "workingDir": "~",
+    "projects": {
+      "_comment": "프로젝트명: 절대경로 형식으로 추가 (예: kkabi → ~/Kkabi_c)"
+    }
   },
+  "provider": "claude",
+  "_provider_hint": "사용할 AI 백엔드: claude 또는 codex",
   "memory": {
     "enabled": true,
     "logRetentionDays": 30

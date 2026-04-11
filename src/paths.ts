@@ -70,3 +70,7 @@ export function getChatSessionsDir(): string {
 export function getPromptsDir(): string {
   return getDataPath("prompts");
 }
+
+export function getSessionsFile(): string {
+  return getDataPath("sessions.json");
+}

@@ -14,6 +14,9 @@ import { filterIncoming, type FilterConfig } from "../interbot/filter.js";
 import { parseReviewTags } from "./reviewParser.js";
 import { executeReviewRequests } from "./reviewExecutor.js";
 import { appendGroupChatLog } from "../interbot/log.js";
+import { parseCommitTags } from "./commitParser.js";
+import { executeCommitSuggestion } from "./commitExecutor.js";
+import { parseFileTags } from "./fileParser.js";
 
 function resolveWorkingDir(chatId: string, channelType: ChannelType): string | undefined {
   const config = getConfig();
@@ -37,11 +40,13 @@ function resolveWorkingDir(chatId: string, channelType: ChannelType): string | u
 
 export interface HandlerOptions {
   provider?: ProviderType;
+  model?: string;
   botUsername?: string;
 }
 
 export function createHandler(channel: Channel, options?: HandlerOptions) {
   const provider = options?.provider ?? "claude";
+  const model = options?.model;
   return async (msg: IncomingMessage): Promise<void> => {
     const { chatId, text, threadId, senderName } = msg;
 
@@ -96,6 +101,11 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
     if (isCommand(text)) {
       const result = await executeCommand(text, chatId, msg.channel);
       await channel.sendText(chatId, result.text, threadId);
+      if (result.files) {
+        for (const filePath of result.files) {
+          await channel.sendFile(chatId, filePath, threadId);
+        }
+      }
       return;
     }
 
@@ -116,10 +126,10 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
     }
 
     // Build prompt and resolve workingDir
-    const prompt = buildPrompt(text, chatId);
     const workingDir = resolveWorkingDir(chatId, msg.channel);
+    const prompt = buildPrompt(text, chatId, workingDir);
 
-    const { promise, position } = enqueue({ prompt, chatId, channel: msg.channel, workingDir, provider });
+    const { promise, position } = enqueue({ prompt, chatId, channel: msg.channel, workingDir, provider, model });
 
     if (position > 1) {
       await channel.sendText(chatId, `Waiting in queue... (position ${position})`, threadId);
@@ -212,7 +222,31 @@ export function createHandler(channel: Channel, options?: HandlerOptions) {
         }
       }
 
+      // Post-process commit suggest tags
+      const { suggestions: commitSuggestions, cleanedResponse: commitCleaned } =
+        parseCommitTags(response);
+      if (commitSuggestions.length > 0) {
+        response = commitCleaned;
+      }
+
+      // Post-process file send tags
+      const { files: filesToSend, cleanedResponse: fileCleaned } =
+        parseFileTags(response);
+      if (filesToSend.length > 0) {
+        response = fileCleaned;
+      }
+
       await channel.sendText(chatId, response, threadId);
+
+      // Send requested files (after main response)
+      for (const file of filesToSend) {
+        await channel.sendFile(chatId, file.path, threadId);
+      }
+
+      // Handle commit suggestions (after sending main response)
+      for (const suggestion of commitSuggestions) {
+        await executeCommitSuggestion(suggestion, channel, chatId, threadId);
+      }
 
       // Save conversation
       saveMessage({

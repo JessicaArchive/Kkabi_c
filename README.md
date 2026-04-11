@@ -9,6 +9,8 @@ Claude CLI / Codex CLI를 텔레그램 봇으로 감싸서, 채팅으로 개발 
 관리자봇 (@kkabi_bot)             ← config.json
 ├── 직원봇: Trading              ← configs/trading.json → ~/kkabi-trading/
 ├── 직원봇: VC                   ← configs/vc.json → ~/virtual-vc/
+├── 직원봇: 3DSplat              ← configs/3dsplat.json → ~/kkabi-3dsplat/
+├── 직원봇: Uniswap              ← configs/uniswap.json → ~/kkabi-uniswap/
 └── 직원봇: Codex (코드 리뷰)    ← configs/codex.json
 ```
 
@@ -34,17 +36,23 @@ Claude CLI / Codex CLI를 텔레그램 봇으로 감싸서, 채팅으로 개발 
 ## 실행
 
 ```bash
-# 전체 봇 기동 (관리자 + 직원봇 전부)
-./start-all.sh
+# 전체 봇 기동 (tmux 세션으로 관리)
+./start-tmux.sh
 
-# macOS에서 더블클릭 실행 (크래시 시 자동 재시작)
+# tmux 세션에 직접 붙기
+./start-tmux.sh attach
+
+# 봇 상태 확인
+./start-tmux.sh status
+
+# 전체 종료
+./start-tmux.sh stop
+
+# macOS에서 더블클릭 실행
 open Kkabi_c.command
 
 # 개발 모드 (관리자봇만, 파일 변경 감지)
 npm run dev
-
-# 전체 종료
-./scripts/stop-all.sh
 ```
 
 ## 새 봇 추가
@@ -52,7 +60,7 @@ npm run dev
 ```bash
 ./scripts/add-bot.sh <이름>
 # → configs/<이름>.json 생성
-# → botToken, workingDir, dataDir 설정 후 start-all.sh 재실행
+# → botToken, workingDir, dataDir 설정 후 start-tmux.sh 재실행
 ```
 
 ## 아키텍처
@@ -68,7 +76,7 @@ npm run dev
   → 프롬프트 빌드 (페르소나 + 메모리 + 히스토리)
   → Claude 큐 진입 (workingDir별 직렬 처리)
   → Provider 실행 (Claude/Codex CLI)
-  → 응답 후처리 (크론/리뷰 태그 파싱)
+  → 응답 후처리 (크론/리뷰/커밋 태그 파싱)
   → 텔레그램 응답 전송
   → DB 저장
 ```
@@ -80,7 +88,7 @@ npm run dev
 | **Provider** | AI 백엔드 추상화 — Claude, Codex 교체 가능 |
 | **Channel Adapter** | 메시징 플랫폼 추상화 — Telegram, Slack, GitHub |
 | **Per-Dir Queue** | workingDir별 서브큐로 git 경합 방지 |
-| **Tag-Based Actions** | 응답 내 HTML 주석 태그로 크론 등록, 코드 리뷰 요청 |
+| **Tag-Based Actions** | 응답 내 HTML 주석 태그로 크론 등록, 코드 리뷰, 커밋 제안 |
 | **Safety Gate** | 위험 키워드 감지 → 사용자 승인 후 실행 |
 | **Interbot Protocol** | 그룹챗 기반 봇 간 구조화된 통신 (코드 리뷰 루프) |
 
@@ -94,6 +102,16 @@ Claude가 코드 작성
   → 최대 3라운드
 ```
 
+### 커밋 파이프라인
+
+```
+Claude 응답에 COMMIT_SUGGEST 태그 포함
+  → commitParser가 파싱
+  → 사용자에게 [승인] [거부] 버튼 전송
+  → 승인 시: git add → commit → push → PR 생성
+  → PR 머지 승인 → squash merge to main
+```
+
 ## 디렉토리 구조
 
 ```
@@ -101,8 +119,9 @@ src/
 ├── index.ts                 # 엔트리포인트
 ├── config.ts                # Zod 설정 로더
 ├── types.ts                 # 타입 정의
+├── paths.ts                 # dataDir 기반 경로 헬퍼
 ├── channels/                # 채널 어댑터 (Telegram, Slack, GitHub)
-├── core/                    # 메시지 파이프라인, 명령어, 크론/리뷰 파서
+├── core/                    # 메시지 파이프라인, 명령어, 크론/리뷰/커밋 파서
 ├── providers/               # AI 백엔드 (Claude, Codex)
 ├── claude/                  # 큐 시스템, 프롬프트 빌더
 ├── scheduler/               # 크론 잡 CRUD & 실행

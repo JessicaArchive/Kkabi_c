@@ -4,8 +4,11 @@ import { loadPersona, getLang } from "../memory/persona.js";
 import { listCrons } from "../scheduler/cron.js";
 import { loadAgents } from "../agents/store.js";
 import { getConfig } from "../config.js";
+import { readFileSync, readdirSync } from "fs";
+import { join } from "path";
+import { homedir } from "os";
 
-export function buildPrompt(userMessage: string, chatId: string): string {
+export function buildPrompt(userMessage: string, chatId: string, workingDir?: string): string {
   const parts: string[] = [];
 
   // System persona
@@ -32,9 +35,24 @@ export function buildPrompt(userMessage: string, chatId: string): string {
     parts.push(`[MEMORY]\n${memory}`);
   }
 
-  // Recent conversation context
+  // Recent conversation context — compare with terminal session logs
   const recent = getRecentConversation(chatId, 20);
-  if (recent.length > 0) {
+  const lastMsgTs = recent.length > 0 ? recent[recent.length - 1].timestamp : 0;
+  const sessionLog = getLatestSessionLog(workingDir);
+
+  if (sessionLog && sessionLog.timestamp > lastMsgTs) {
+    // Terminal session log is more recent — include it as context
+    const history = recent.length > 0
+      ? recent
+          .map((r) => `${r.role === "user" ? "User" : "Assistant"}: ${r.content}`)
+          .join("\n")
+      : "";
+    const sessionSection = `[RECENT TERMINAL SESSION]\n아래는 터미널에서 진행된 최근 세션 요약이야. 텔레그램 대화보다 최신이니 이 맥락을 우선 참고해.\n\n${sessionLog.content}`;
+    if (history) {
+      parts.push(`[CONVERSATION HISTORY]\n${history}`);
+    }
+    parts.push(sessionSection);
+  } else if (recent.length > 0) {
     const history = recent
       .map((r) => `${r.role === "user" ? "User" : "Assistant"}: ${r.content}`)
       .join("\n");
@@ -47,6 +65,50 @@ export function buildPrompt(userMessage: string, chatId: string): string {
   return parts.join("\n\n");
 }
 
+function getLatestSessionLog(workingDir?: string): { content: string; timestamp: number } | null {
+  try {
+    const baseDir = join(homedir(), "Obsidian", "Kkabi", "sessions");
+
+    // If workingDir given, derive slug = first path component relative to home
+    // e.g. ~/kkabi-trading/src → "kkabi-trading"
+    const projectSlug = workingDir
+      ? (workingDir.startsWith("~/")
+          ? workingDir.slice(2).split("/")[0]
+          : workingDir.replace(homedir() + "/", "").split("/")[0])
+      : null;
+    const sessionsDir = projectSlug
+      ? join(baseDir, projectSlug)
+      : baseDir;
+
+    let dir = sessionsDir;
+    let files = [];
+    try {
+      files = readdirSync(dir).filter((f) => f.endsWith(".md")).sort().reverse();
+    } catch {
+      // Subdirectory doesn't exist yet — fall back to base dir
+      dir = baseDir;
+      files = readdirSync(dir).filter((f) => f.endsWith(".md")).sort().reverse();
+    }
+
+    if (files.length === 0) return null;
+
+    const latestFile = files[0];
+    // Parse timestamp from filename: YYYY-MM-DD-HH.md
+    const match = latestFile.match(/^(\d{4})-(\d{2})-(\d{2})-(\d{2})\.md$/);
+    if (!match) return null;
+
+    const [, year, month, day, hour] = match;
+    const timestamp = new Date(
+      Number(year), Number(month) - 1, Number(day), Number(hour)
+    ).getTime();
+
+    const content = readFileSync(join(dir, latestFile), "utf-8");
+    return { content, timestamp };
+  } catch {
+    return null;
+  }
+}
+
 function buildCodingRulesSection(): string {
   const lines: string[] = ["[CODING RULES]"];
   lines.push("When the user asks you to modify code, fix bugs, or add features, follow these rules:");
@@ -54,15 +116,23 @@ function buildCodingRulesSection(): string {
   lines.push("## Git Workflow");
   lines.push("- ALWAYS create a new branch before making changes. Never commit directly to main/master.");
   lines.push("- Use descriptive branch names like: feature/<short-description>, fix/<short-description>");
-  lines.push("- Write clear, concise commit messages that describe what changed and why.");
-  lines.push("- After committing, push the branch and create a Pull Request using `gh pr create`.");
-  lines.push("- NEVER force push. NEVER delete branches. NEVER merge PRs.");
+  lines.push("- NEVER run git commit, git push, gh pr create, or gh pr merge yourself.");
+  lines.push("- Instead, use the COMMIT_SUGGEST tag (see below) and the system will handle everything.");
+  lines.push("- NEVER force push. NEVER delete branches.");
+  lines.push("");
+  lines.push("## Commit Suggest Tag");
+  lines.push("- 기능 하나 완성하거나 버그 하나 고치면 커밋을 제안해.");
+  lines.push("- 큰 작업이 끝나면 반드시 커밋을 제안해.");
+  lines.push("- 커밋 제안 시 응답 끝에 아래 태그를 포함해:");
+  lines.push('  <!--COMMIT_SUGGEST:{"message":"feat: 기능 설명"}-->');
+  lines.push("- 커밋 메시지는 conventional commits 형식 (feat:, fix:, refactor: 등).");
+  lines.push("- 태그 외에 자연어로도 변경 내용을 설명해.");
+  lines.push("- 시스템이 태그를 감지하면 사용자에게 커밋 승인 버튼을 보내고, 승인 시 자동으로 commit → push → PR → 머지까지 처리해.");
   lines.push("");
   lines.push("## Response Format");
   lines.push("- After completing code changes, include a summary of what you did:");
   lines.push("  - Which files were modified/created");
   lines.push("  - What the changes do");
-  lines.push("  - The PR link (if created)");
   return lines.join("\n");
 }
 
@@ -122,6 +192,18 @@ function buildCapabilitiesSection(chatId: string): string {
     lines.push("ALWAYS include a natural language summary before the tag.");
     lines.push("");
   }
+
+  // File sending capability
+  lines.push("## File Sending");
+  lines.push("When the user asks you to send, share, or show a file, include this hidden tag at the END of your response:");
+  lines.push('  <!--SEND_FILE:{"path":"/absolute/path/to/file"}-->');
+  lines.push("The system will send the file as a Telegram document attachment.");
+  lines.push("Rules:");
+  lines.push("- Use ABSOLUTE paths (expand ~ to full home path).");
+  lines.push("- You can include multiple SEND_FILE tags to send multiple files.");
+  lines.push("- ALWAYS include a natural language response alongside the tag.");
+  lines.push("- Only use this for actual files the user requested. Verify the file exists before including the tag.");
+  lines.push("");
 
   // Available agents
   const agents = loadAgents();
